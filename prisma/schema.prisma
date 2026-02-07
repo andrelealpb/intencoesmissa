@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  PARISH_ADMIN
+}
+
+enum IntentionGroup {
+  SUFRAGIO
+  SUPLICAS
+  ACAO_DE_GRACAS
+}
+
+enum DispatchScope {
+  PER_MASS
+  PER_DAY
+}
+
+enum EmolumentScope {
+  DEFAULT
+  GROUP
+  TYPE
+}
+
+enum RequestStatus {
+  SUBMITTED
+  CANCELLED
+}
+
+enum DispatchStatus {
+  SENT
+  FAILED
+}
+
+// ─── Parishes ───────────────────────────────────────────
+
+model Parish {
+  id              String   @id @default(uuid()) @db.Uuid
+  slug            String   @unique
+  cnpj            String?
+  legalName       String?  @map("legal_name")
+  parishName      String   @map("parish_name")
+  pastorName      String?  @map("pastor_name")
+  addressJson     Json?    @map("address_json") @db.JsonB
+  phonesJson      Json?    @map("phones_json") @db.JsonB
+  dispatchEmails  String[] @map("dispatch_emails")
+  logoUrl         String?  @map("logo_url")
+  logoStorageKey  String?  @map("logo_storage_key")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  settings         ParishSettings?
+  massSchedules    MassSchedule[]
+  massExceptions   MassException[]
+  intentionTypes   IntentionType[]
+  emoluments       Emolument[]
+  requests         Request[]
+  dispatchBatches  DispatchBatch[]
+
+  @@map("parishes")
+}
+
+// ─── Users ──────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  parishId     String?  @map("parish_id") @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  parish Parish? @relation(fields: [parishId], references: [id], onDelete: SetNull)
+
+  @@map("users")
+}
+
+// ─── Parish Settings ────────────────────────────────────
+
+model ParishSettings {
+  parishId                String        @id @map("parish_id") @db.Uuid
+  maxIntentionsPerRequest Int           @default(5) @map("max_intentions_per_request")
+  dispatchTime            String        @default("18:00") @map("dispatch_time")
+  dispatchScope           DispatchScope @default(PER_MASS) @map("dispatch_scope")
+  dispatchTimezone        String        @default("America/Sao_Paulo") @map("dispatch_timezone")
+
+  parish Parish @relation(fields: [parishId], references: [id], onDelete: Cascade)
+
+  @@map("parish_settings")
+}
+
+// ─── Mass Schedules ─────────────────────────────────────
+
+model MassSchedule {
+  id       String  @id @default(uuid()) @db.Uuid
+  parishId String  @map("parish_id") @db.Uuid
+  weekday  Int     // 0 = Sunday, 6 = Saturday
+  time     String  // "HH:mm"
+  isActive Boolean @default(true) @map("is_active")
+
+  parish Parish @relation(fields: [parishId], references: [id], onDelete: Cascade)
+
+  @@map("mass_schedules")
+}
+
+// ─── Mass Exceptions ────────────────────────────────────
+
+model MassException {
+  id       String  @id @default(uuid()) @db.Uuid
+  parishId String  @map("parish_id") @db.Uuid
+  date     DateTime @db.Date
+  time     String  // "HH:mm"
+  title    String?
+  isActive Boolean @default(true) @map("is_active")
+
+  parish Parish @relation(fields: [parishId], references: [id], onDelete: Cascade)
+
+  @@map("mass_exceptions")
+}
+
+// ─── Intention Types ────────────────────────────────────
+
+model IntentionType {
+  id                  String         @id @default(uuid()) @db.Uuid
+  parishId            String         @map("parish_id") @db.Uuid
+  group               IntentionGroup
+  name                String
+  isActive            Boolean        @default(true) @map("is_active")
+  requiresDeceasedName Boolean       @default(false) @map("requires_deceased_name")
+  requiresFamilyNames  Boolean       @default(false) @map("requires_family_names")
+  opensOptionalNotes   Boolean       @default(false) @map("opens_optional_notes")
+  requiresComplement   Boolean       @default(false) @map("requires_complement")
+
+  parish             Parish              @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  emoluments         Emolument[]
+  requestIntentions  RequestIntention[]
+
+  @@map("intention_types")
+}
+
+// ─── Emoluments ─────────────────────────────────────────
+
+model Emolument {
+  id              String         @id @default(uuid()) @db.Uuid
+  parishId        String         @map("parish_id") @db.Uuid
+  scope           EmolumentScope
+  group           IntentionGroup?
+  intentionTypeId String?        @map("intention_type_id") @db.Uuid
+  suggestedValue  Decimal        @map("suggested_value") @db.Decimal(10, 2)
+  isActive        Boolean        @default(true) @map("is_active")
+
+  parish        Parish         @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  intentionType IntentionType? @relation(fields: [intentionTypeId], references: [id], onDelete: SetNull)
+
+  @@map("emoluments")
+}
+
+// ─── Requests ───────────────────────────────────────────
+
+model Request {
+  id            String        @id @default(uuid()) @db.Uuid
+  parishId      String        @map("parish_id") @db.Uuid
+  protocol      String
+  massDate      DateTime      @map("mass_date") @db.Date
+  massTime      String        @map("mass_time")
+  faithfulName  String        @map("faithful_name")
+  faithfulPhone String        @map("faithful_phone")
+  status        RequestStatus @default(SUBMITTED)
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  parish     Parish             @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  intentions RequestIntention[]
+
+  @@unique([parishId, protocol])
+  @@map("requests")
+}
+
+// ─── Request Intentions ─────────────────────────────────
+
+model RequestIntention {
+  id              String         @id @default(uuid()) @db.Uuid
+  requestId       String         @map("request_id") @db.Uuid
+  group           IntentionGroup
+  intentionTypeId String         @map("intention_type_id") @db.Uuid
+  deceasedName    String?        @map("deceased_name")
+  familyNames     String?        @map("family_names")
+  complement      String?
+  notes           String?
+  suggestedValue  Decimal?       @map("suggested_value") @db.Decimal(10, 2)
+  offeredValue    Decimal?       @map("offered_value") @db.Decimal(10, 2)
+  dispatchedAt    DateTime?      @map("dispatched_at")
+  dispatchBatchId String?        @map("dispatch_batch_id") @db.Uuid
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  request       Request        @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  intentionType IntentionType  @relation(fields: [intentionTypeId], references: [id])
+  dispatchBatch DispatchBatch? @relation(fields: [dispatchBatchId], references: [id], onDelete: SetNull)
+
+  @@map("request_intentions")
+}
+
+// ─── Dispatch Batches ───────────────────────────────────
+
+model DispatchBatch {
+  id             String         @id @default(uuid()) @db.Uuid
+  parishId       String         @map("parish_id") @db.Uuid
+  scope          DispatchScope
+  massDate       DateTime       @map("mass_date") @db.Date
+  massTime       String?        @map("mass_time")
+  pdfStorageKey  String         @map("pdf_storage_key")
+  pdfUrl         String?        @map("pdf_url")
+  sentToEmails   String[]       @map("sent_to_emails")
+  sentAt         DateTime       @map("sent_at")
+  status         DispatchStatus
+  errorMessage   String?        @map("error_message")
+
+  parish     Parish             @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  intentions RequestIntention[]
+
+  @@map("dispatch_batches")
+}

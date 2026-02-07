@@ -1,0 +1,24 @@
+{
+  "name": "missas-intencoes",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @missas/api dev",
+    "dev:web": "pnpm --filter @missas/web dev",
+    "dev:worker": "pnpm --filter @missas/worker dev",
+    "build": "pnpm -r build",
+    "build:api": "pnpm --filter @missas/api build",
+    "build:web": "pnpm --filter @missas/web build",
+    "build:worker": "pnpm --filter @missas/worker build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:migrate:dev": "prisma migrate dev --schema=prisma/schema.prisma",
+    "db:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:validate": "prisma validate --schema=prisma/schema.prisma"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
