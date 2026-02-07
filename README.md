@@ -104,13 +104,13 @@ pnpm dev:worker   # Worker processando jobs
 1. No projeto, clique **"+ New"** → **"Database"** → **"PostgreSQL"**
 2. Após criado, vá em **Variables** → copie o valor de `DATABASE_URL`
 
-#### 1.3 Serviço API
+#### 1.3 Serviço API (usa Dockerfile)
 
 1. Clique **"+ New"** → **"GitHub Repo"** → selecione `andrelealpb/intencoesmissa`
 2. Configurações:
-   - **Root Directory**: `apps/api`
-   - **Build Command**: `cd ../.. && pnpm install && pnpm db:generate && pnpm build:api`
-   - **Start Command**: `cd ../.. && pnpm db:migrate:deploy && node apps/api/dist/main.js`
+   - **Root Directory**: `.` (raiz do repo — **NÃO** colocar `apps/api`)
+   - **Builder**: Docker
+   - **Dockerfile Path**: `Dockerfile.api`
 3. Variáveis de ambiente:
 
    | Variável | Valor |
@@ -130,30 +130,37 @@ pnpm dev:worker   # Worker processando jobs
    | `S3_ACCESS_KEY_ID` | *(chave de acesso IAM)* |
    | `S3_SECRET_ACCESS_KEY` | *(chave secreta IAM)* |
 
-#### 1.4 Serviço Worker
+#### 1.4 Serviço Worker (usa Dockerfile)
 
 1. Clique **"+ New"** → **"GitHub Repo"** → mesmo repo
 2. Configurações:
-   - **Root Directory**: `apps/worker`
-   - **Build Command**: `cd ../.. && pnpm install && pnpm db:generate && pnpm build:worker`
-   - **Start Command**: `node apps/worker/dist/main.js`
+   - **Root Directory**: `.` (raiz do repo — **NÃO** colocar `apps/worker`)
+   - **Builder**: Docker
+   - **Dockerfile Path**: `Dockerfile.worker`
 3. Variáveis de ambiente: mesmas de `DATABASE_URL`, `SMTP_*` e `S3_*` da API
+
+> **IMPORTANTE**: Railway com monorepo pnpm requer Dockerfiles porque o Nixpacks padrão
+> não detecta pnpm corretamente. Os Dockerfiles `Dockerfile.api` e `Dockerfile.worker`
+> na raiz do repo já estão configurados para instalar pnpm, dependências e buildar cada app.
 
 #### 1.5 Rodar seed (uma vez)
 
 No serviço da API, abra o terminal (aba "Shell") e execute:
 ```bash
-cd ../.. && pnpm db:seed
+pnpm db:seed
 ```
 
 ### 2. Vercel (Frontend Web)
+
+> O arquivo `vercel.json` na raiz do repo já configura o build corretamente para o monorepo.
 
 1. Acesse [vercel.com](https://vercel.com) e faça login com GitHub
 2. Clique **"Add New..."** → **"Project"**
 3. Selecione o repo `andrelealpb/intencoesmissa`
 4. Configurações:
-   - **Root Directory**: `apps/web`
+   - **Root Directory**: `.` (raiz do repo — **NÃO** colocar `apps/web`)
    - **Framework Preset**: Next.js (auto-detectado)
+   - O `vercel.json` já define install, build e output corretos
 5. Variáveis de ambiente:
 
    | Variável | Valor |

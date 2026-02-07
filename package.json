@@ -1,6 +1,7 @@
 {
   "name": "missas-intencoes",
   "private": true,
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev:api": "pnpm --filter @missas/api dev",
     "dev:web": "pnpm --filter @missas/web dev",
