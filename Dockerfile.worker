@@ -15,11 +15,11 @@ COPY prisma/ ./prisma/
 # Copy worker app
 COPY apps/worker/ ./apps/worker/
 
-# Install dependencies
+# Install ALL dependencies (including devDependencies for prisma CLI + tsc)
 RUN pnpm install --frozen-lockfile || pnpm install
 
 # Generate Prisma client
-RUN pnpm db:generate
+RUN pnpm exec prisma generate --schema=prisma/schema.prisma
 
 # Build the worker
 RUN pnpm build:worker

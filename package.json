@@ -13,11 +13,17 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "db:generate": "prisma generate --schema=prisma/schema.prisma",
-    "db:migrate:dev": "prisma migrate dev --schema=prisma/schema.prisma",
-    "db:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:validate": "prisma validate --schema=prisma/schema.prisma"
+    "db:generate": "pnpm exec prisma generate --schema=prisma/schema.prisma",
+    "db:migrate:dev": "pnpm exec prisma migrate dev --schema=prisma/schema.prisma",
+    "db:migrate:deploy": "pnpm exec prisma migrate deploy --schema=prisma/schema.prisma",
+    "db:seed": "pnpm exec tsx prisma/seed.ts",
+    "db:validate": "pnpm exec prisma validate --schema=prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "prisma": "^5.10.0",
+    "tsx": "^4.7.0",
+    "bcryptjs": "^2.4.3",
+    "typescript": "^5.4.0"
   },
   "engines": {
     "node": ">=20"

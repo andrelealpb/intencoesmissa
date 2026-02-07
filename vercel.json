@@ -1,6 +1,6 @@
 {
-  "installCommand": "pnpm install",
-  "buildCommand": "pnpm build:web",
+  "installCommand": "corepack enable && pnpm install",
+  "buildCommand": "pnpm exec prisma generate --schema=prisma/schema.prisma && cd apps/web && pnpm exec next build",
   "outputDirectory": "apps/web/.next",
   "framework": "nextjs"
 }
