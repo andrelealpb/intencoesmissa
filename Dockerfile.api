@@ -15,7 +15,7 @@ COPY prisma/ ./prisma/
 # Copy api app
 COPY apps/api/ ./apps/api/
 
-# Install ALL dependencies (including devDependencies for prisma CLI + nest build)
+# Install dependencies
 RUN pnpm install --frozen-lockfile || pnpm install
 
 # Generate Prisma client
@@ -24,8 +24,10 @@ RUN pnpm exec prisma generate --schema=prisma/schema.prisma
 # Build the API
 RUN pnpm build:api
 
+# Create entrypoint script
+RUN printf '#!/bin/sh\npnpm exec prisma migrate deploy --schema=prisma/schema.prisma\nnode apps/api/dist/main.js\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
 EXPOSE 3001
 ENV PORT=3001
 
-# Start: run migrations then start the API
-CMD ["sh", "-c", "pnpm exec prisma migrate deploy --schema=prisma/schema.prisma && node apps/api/dist/main.js"]
+ENTRYPOINT ["/app/entrypoint.sh"]
