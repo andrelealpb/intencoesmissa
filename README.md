@@ -10,7 +10,8 @@ Sistema para registro e gerenciamento de intenções de missa, com disparo autom
 | **API** | NestJS + TypeScript | Railway |
 | **Worker** | Node.js + pg-boss | Railway |
 | **Banco** | PostgreSQL | Railway |
-| **Storage** | S3 / Cloudflare R2 | Cloud |
+| **Storage** | AWS S3 | Amazon |
+| **E-mail** | SMTP | MailerSend |
 
 ```
 apps/
@@ -37,8 +38,8 @@ prisma/
 ### 1. Clonar e instalar
 
 ```bash
-git clone <repo-url>
-cd missas-intencoes
+git clone https://github.com/andrelealpb/intencoesmissa.git
+cd intencoesmissa
 pnpm install
 ```
 
@@ -87,78 +88,138 @@ pnpm dev:worker   # Worker processando jobs
 | `superadmin@missas.com` | `Admin@123` | Super Admin |
 | `admin@santanna.com` | `Admin@123` | Admin Paróquia |
 
-## Deploy
+---
 
-### Railway (API + Worker + Postgres)
+## Deploy em Produção
 
-1. **Criar projeto no Railway**
-2. **Adicionar PostgreSQL** como serviço — copiar `DATABASE_URL`
-3. **Criar serviço API**:
-   - Source: GitHub repo
-   - Root directory: `apps/api`
-   - Build: `pnpm install && pnpm db:generate && pnpm build:api`
-   - Start: `pnpm db:migrate:deploy && node apps/api/dist/main.js`
-   - Variáveis de ambiente:
+### 1. Railway (API + Worker + PostgreSQL)
 
-     | Variável | Valor |
-     |----------|-------|
-     | `DATABASE_URL` | (do Postgres Railway) |
-     | `JWT_SECRET` | (gerar string segura) |
-     | `CORS_ORIGINS` | `https://seu-app.vercel.app` |
-     | `SMTP_HOST` | (seu servidor SMTP) |
-     | `SMTP_PORT` | `587` |
-     | `SMTP_USER` | (usuário SMTP) |
-     | `SMTP_PASS` | (senha SMTP) |
-     | `SMTP_FROM` | `noreply@seudominio.com` |
-     | `S3_ENDPOINT` | (endpoint S3/R2) |
-     | `S3_REGION` | `auto` (R2) ou região AWS |
-     | `S3_BUCKET` | `missas-intencoes` |
-     | `S3_ACCESS_KEY_ID` | (chave de acesso) |
-     | `S3_SECRET_ACCESS_KEY` | (chave secreta) |
+#### 1.1 Criar projeto
 
-4. **Criar serviço Worker**:
-   - Source: GitHub repo
-   - Root directory: `apps/worker`
-   - Build: `pnpm install && pnpm db:generate && pnpm build:worker`
-   - Start: `node apps/worker/dist/main.js`
-   - Mesmas variáveis de ambiente do API (DATABASE_URL, SMTP_*, S3_*)
+1. Acesse [railway.app](https://railway.app) e faça login com GitHub
+2. Clique em **"New Project"**
 
-### Vercel (Web)
+#### 1.2 Adicionar PostgreSQL
 
-1. **Importar projeto** do GitHub
-2. **Root Directory**: `apps/web`
-3. **Framework Preset**: Next.js
-4. **Variáveis de ambiente**:
+1. No projeto, clique **"+ New"** → **"Database"** → **"PostgreSQL"**
+2. Após criado, vá em **Variables** → copie o valor de `DATABASE_URL`
+
+#### 1.3 Serviço API
+
+1. Clique **"+ New"** → **"GitHub Repo"** → selecione `andrelealpb/intencoesmissa`
+2. Configurações:
+   - **Root Directory**: `apps/api`
+   - **Build Command**: `cd ../.. && pnpm install && pnpm db:generate && pnpm build:api`
+   - **Start Command**: `cd ../.. && pnpm db:migrate:deploy && node apps/api/dist/main.js`
+3. Variáveis de ambiente:
 
    | Variável | Valor |
    |----------|-------|
-   | `NEXT_PUBLIC_API_URL` | `https://sua-api.railway.app` |
-   | `NEXTAUTH_SECRET` | (gerar string segura) |
-   | `NEXTAUTH_URL` | `https://seu-app.vercel.app` |
+   | `DATABASE_URL` | *(referência ao Postgres do Railway)* |
+   | `JWT_SECRET` | *(string segura — configurada nas variáveis do Railway)* |
+   | `PORT` | `3001` |
+   | `CORS_ORIGINS` | `https://SEU-APP.vercel.app` |
+   | `SMTP_HOST` | `smtp.mailersend.net` |
+   | `SMTP_PORT` | `587` |
+   | `SMTP_USER` | *(usuário SMTP do MailerSend)* |
+   | `SMTP_PASS` | *(senha SMTP do MailerSend)* |
+   | `SMTP_FROM` | `noreply@seu-dominio-verificado.com` |
+   | `S3_ENDPOINT` | `https://s3.REGIAO.amazonaws.com` |
+   | `S3_REGION` | *(região do seu bucket, ex: us-east-1)* |
+   | `S3_BUCKET` | *(nome do bucket)* |
+   | `S3_ACCESS_KEY_ID` | *(chave de acesso IAM)* |
+   | `S3_SECRET_ACCESS_KEY` | *(chave secreta IAM)* |
 
-### Storage (S3 / Cloudflare R2)
+#### 1.4 Serviço Worker
 
-1. **Cloudflare R2** (recomendado — grátis até 10GB):
-   - Criar bucket `missas-intencoes`
-   - Gerar API Token com permissão R2
-   - Endpoint: `https://<account-id>.r2.cloudflarestorage.com`
-2. **AWS S3**:
-   - Criar bucket com nome desejado
-   - Criar IAM user com política para o bucket
-   - Usar região e endpoint padrão
+1. Clique **"+ New"** → **"GitHub Repo"** → mesmo repo
+2. Configurações:
+   - **Root Directory**: `apps/worker`
+   - **Build Command**: `cd ../.. && pnpm install && pnpm db:generate && pnpm build:worker`
+   - **Start Command**: `node apps/worker/dist/main.js`
+3. Variáveis de ambiente: mesmas de `DATABASE_URL`, `SMTP_*` e `S3_*` da API
 
-### Rodar migrations em produção
+#### 1.5 Rodar seed (uma vez)
 
+No serviço da API, abra o terminal (aba "Shell") e execute:
 ```bash
-# Via Railway CLI ou release command:
-npx prisma migrate deploy --schema=prisma/schema.prisma
+cd ../.. && pnpm db:seed
 ```
+
+### 2. Vercel (Frontend Web)
+
+1. Acesse [vercel.com](https://vercel.com) e faça login com GitHub
+2. Clique **"Add New..."** → **"Project"**
+3. Selecione o repo `andrelealpb/intencoesmissa`
+4. Configurações:
+   - **Root Directory**: `apps/web`
+   - **Framework Preset**: Next.js (auto-detectado)
+5. Variáveis de ambiente:
+
+   | Variável | Valor |
+   |----------|-------|
+   | `NEXT_PUBLIC_API_URL` | `https://SUA-API.railway.app` |
+   | `NEXTAUTH_SECRET` | *(mesma string segura usada no JWT ou outra)* |
+   | `NEXTAUTH_URL` | `https://SEU-APP.vercel.app` |
+
+6. Clique **"Deploy"**
+
+### 3. MailerSend (SMTP)
+
+Plataforma utilizada: [MailerSend](https://www.mailersend.com)
+
+1. Criar conta em mailersend.com
+2. Verificar domínio de envio (DNS: SPF, DKIM, DMARC)
+3. Em **Domains** → selecionar domínio → aba **SMTP**
+4. Copiar credenciais:
+   - Host: `smtp.mailersend.net`
+   - Port: `587`
+   - Username e Password gerados pelo MailerSend
+5. Configurar `SMTP_FROM` como um remetente do domínio verificado
+
+### 4. AWS S3 (Storage)
+
+Plataforma utilizada: [Amazon S3](https://aws.amazon.com/s3/)
+
+1. Criar bucket no S3 (ex: `missas-intencoes-prod`)
+2. Região: escolher a mais próxima (ex: `sa-east-1` para São Paulo)
+3. Criar IAM user com política de acesso ao bucket:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "s3:PutObject",
+           "s3:GetObject",
+           "s3:DeleteObject"
+         ],
+         "Resource": "arn:aws:s3:::SEU-BUCKET-NAME/*"
+       }
+     ]
+   }
+   ```
+
+4. Gerar Access Key e Secret Key para o IAM user
+5. Endpoint S3: `https://s3.REGIAO.amazonaws.com`
+
+### Estrutura de armazenamento no S3
+
+```
+SEU-BUCKET/
+  parishes/{parishId}/logo.png          # Logomarca da paróquia
+  dispatches/{parishId}/{YYYYMMDD}/{HHmm}.pdf  # PDFs dos disparos
+```
+
+---
 
 ## Testar disparo manualmente
 
 ```bash
 # Via API (autenticado como admin):
-curl -X POST https://sua-api.railway.app/admin/dispatches/run-now \
+curl -X POST https://SUA-API.railway.app/admin/dispatches/run-now \
   -H "Authorization: Bearer <token>"
 ```
 
