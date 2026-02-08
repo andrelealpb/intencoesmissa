@@ -6,7 +6,7 @@ async function bootstrap() {
 
   const corsOrigins = process.env.CORS_ORIGINS
     ? process.env.CORS_ORIGINS.split(",").map((o) => o.trim())
-    : ["http://localhost:3000"];
+    : true; // allow all origins when not configured (API uses Bearer tokens, not cookies)
 
   app.enableCors({
     origin: corsOrigins,

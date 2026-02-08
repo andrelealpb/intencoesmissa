@@ -18,6 +18,7 @@ export default function SAParishesPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ slug: '', parishName: '', cnpj: '' });
+  const [error, setError] = useState('');
   const token = session?.accessToken as string;
 
   useEffect(() => {
@@ -27,13 +28,18 @@ export default function SAParishesPage() {
 
   const handleCreate = async () => {
     if (!token) return;
-    const created = await apiAuthFetch('/sa/parishes', token, {
-      method: 'POST',
-      body: JSON.stringify(form),
-    });
-    setParishes([...parishes, created]);
-    setShowForm(false);
-    setForm({ slug: '', parishName: '', cnpj: '' });
+    setError('');
+    try {
+      const created = await apiAuthFetch('/sa/parishes', token, {
+        method: 'POST',
+        body: JSON.stringify(form),
+      });
+      setParishes([...parishes, created]);
+      setShowForm(false);
+      setForm({ slug: '', parishName: '', cnpj: '' });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro ao criar paróquia');
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -84,13 +90,16 @@ export default function SAParishesPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
             <h2 className="text-lg font-bold mb-4">Nova Paróquia</h2>
+            {error && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">{error}</div>
+            )}
             <div className="space-y-3">
               <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Nome da Paróquia" value={form.parishName} onChange={(e) => setForm({ ...form, parishName: e.target.value })} />
               <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Slug (ex: minha-paroquia)" value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} />
               <input className="w-full border rounded px-3 py-2 text-sm" placeholder="CNPJ (opcional)" value={form.cnpj} onChange={(e) => setForm({ ...form, cnpj: e.target.value })} />
             </div>
             <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+              <button onClick={() => { setShowForm(false); setError(''); }} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
               <button onClick={handleCreate} className="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700">Criar</button>
             </div>
           </div>

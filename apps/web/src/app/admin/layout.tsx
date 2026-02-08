@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, ReactNode } from 'react';
 import Link from 'next/link';
@@ -57,7 +57,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ${
+        className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 flex flex-col ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -65,7 +65,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <h2 className="font-bold text-lg text-gray-800">Admin Paróquia</h2>
           <p className="text-sm text-gray-500 truncate">{session.user?.email}</p>
         </div>
-        <nav className="p-2">
+        <nav className="p-2 flex-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -77,6 +77,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
+        <div className="p-2 border-t border-gray-200">
+          <button
+            onClick={() => signOut({ callbackUrl: '/admin/login' })}
+            className="w-full px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors text-left"
+          >
+            Sair
+          </button>
+        </div>
       </aside>
 
       {/* Main content */}

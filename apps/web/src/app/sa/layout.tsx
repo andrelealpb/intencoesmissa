@@ -1,6 +1,6 @@
 'use client';
 
-import { useSession } from 'next-auth/react';
+import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, ReactNode } from 'react';
 import Link from 'next/link';
@@ -45,14 +45,15 @@ export default function SALayout({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-30 w-56 bg-purple-900 text-white transform transition-transform duration-200 ${
+        className={`fixed lg:static inset-y-0 left-0 z-30 w-56 bg-purple-900 text-white transform transition-transform duration-200 flex flex-col ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         <div className="p-4 border-b border-purple-700">
           <h2 className="font-bold text-lg">Super Admin</h2>
+          <p className="text-xs text-purple-300 truncate">{session.user?.email}</p>
         </div>
-        <nav className="p-2">
+        <nav className="p-2 flex-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -64,6 +65,14 @@ export default function SALayout({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
+        <div className="p-2 border-t border-purple-700">
+          <button
+            onClick={() => signOut({ callbackUrl: '/sa/login' })}
+            className="w-full px-3 py-2 rounded-md text-sm text-purple-200 hover:bg-purple-800 hover:text-white transition-colors text-left"
+          >
+            Sair
+          </button>
+        </div>
       </aside>
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center lg:hidden">
