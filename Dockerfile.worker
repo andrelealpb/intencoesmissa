@@ -21,7 +21,7 @@ RUN pnpm install --frozen-lockfile || pnpm install
 # Generate Prisma client
 RUN pnpm exec prisma generate --schema=prisma/schema.prisma
 
-# Build the worker
-RUN pnpm build:worker
+# Build shared package first, then worker
+RUN pnpm --filter @missas/shared build && pnpm --filter @missas/worker build
 
 ENTRYPOINT ["node", "apps/worker/dist/main.js"]

@@ -21,8 +21,8 @@ RUN pnpm install --frozen-lockfile || pnpm install
 # Generate Prisma client
 RUN pnpm exec prisma generate --schema=prisma/schema.prisma
 
-# Build the API
-RUN pnpm build:api
+# Build shared package first, then API
+RUN pnpm --filter @missas/shared build && pnpm --filter @missas/api build
 
 # Create entrypoint script
 RUN printf '#!/bin/sh\npnpm exec prisma migrate deploy --schema=prisma/schema.prisma\nnode apps/api/dist/main.js\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
