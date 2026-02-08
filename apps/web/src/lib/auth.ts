@@ -14,11 +14,15 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
+          console.error("[NextAuth] Missing credentials");
           return null;
         }
 
+        const url = `${API_URL}/auth/login`;
+        console.log("[NextAuth] Attempting login at:", url);
+
         try {
-          const res = await fetch(`${API_URL}/auth/login`, {
+          const res = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -27,11 +31,16 @@ export const authOptions: NextAuthOptions = {
             }),
           });
 
+          console.log("[NextAuth] API response status:", res.status);
+
           if (!res.ok) {
+            const errorText = await res.text();
+            console.error("[NextAuth] API error:", errorText);
             return null;
           }
 
           const data = await res.json();
+          console.log("[NextAuth] API response keys:", Object.keys(data));
 
           return {
             id: data.user.id,
@@ -41,7 +50,8 @@ export const authOptions: NextAuthOptions = {
             parishId: data.user.parishId,
             accessToken: data.accessToken,
           };
-        } catch {
+        } catch (error) {
+          console.error("[NextAuth] Fetch error:", error);
           return null;
         }
       },
