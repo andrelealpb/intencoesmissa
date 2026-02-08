@@ -27,8 +27,20 @@ RUN pnpm --filter @missas/shared build && pnpm --filter @missas/api build
 # Verify migration files exist
 RUN ls -la prisma/migrations/ && echo "Migration files found"
 
-# Create entrypoint script
-RUN printf '#!/bin/sh\nset -e\necho "=== Running Prisma migrations ==="\nls -la /app/prisma/migrations/\npnpm exec prisma migrate deploy --schema=prisma/schema.prisma\necho "=== Migrations complete ==="\nnode apps/api/dist/main.js\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+# Create entrypoint script (migrate + seed + start)
+COPY <<'ENTRY' /app/entrypoint.sh
+#!/bin/sh
+set -e
+echo "=== Running Prisma migrations ==="
+ls -la /app/prisma/migrations/
+pnpm exec prisma migrate deploy --schema=prisma/schema.prisma
+echo "=== Migrations complete ==="
+echo "=== Running seed (upsert — idempotent) ==="
+pnpm exec tsx prisma/seed.ts || echo "Seed warning: non-fatal, continuing..."
+echo "=== Starting API ==="
+node apps/api/dist/main.js
+ENTRY
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 3001
 ENV PORT=3001
