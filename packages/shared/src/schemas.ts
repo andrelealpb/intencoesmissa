@@ -31,11 +31,11 @@ export const createRequestSchema = z.object({
       z.object({
         group: z.nativeEnum(IntentionGroup),
         intentionTypeId: z.string().min(1),
-        deceasedName: z.string().optional(),
-        familyNames: z.string().optional(),
-        complement: z.string().optional(),
-        notes: z.string().optional(),
-        offeredValue: z.number().positive().optional(),
+        deceasedName: z.string().nullish(),
+        familyNames: z.string().nullish(),
+        complement: z.string().nullish(),
+        notes: z.string().nullish(),
+        offeredValue: z.number().positive().nullish(),
       }),
     )
     .min(1, "Adicione pelo menos uma intencao"),
@@ -97,7 +97,7 @@ export const massExceptionSchema = z.object({
   time: z
     .string()
     .regex(/^\d{2}:\d{2}$/, "Horario deve estar no formato HH:mm"),
-  title: z.string().optional(),
+  title: z.string().nullish(),
   isActive: z.boolean(),
 });
 
@@ -107,8 +107,8 @@ export const massExceptionSchema = z.object({
 
 export const emolumentSchema = z.object({
   scope: z.nativeEnum(EmolumentScope),
-  group: z.nativeEnum(IntentionGroup).optional(),
-  intentionTypeId: z.string().optional(),
+  group: z.nativeEnum(IntentionGroup).nullish(),
+  intentionTypeId: z.string().nullish(),
   suggestedValue: z.number().positive("Valor deve ser positivo"),
   isActive: z.boolean(),
 });
@@ -119,10 +119,10 @@ export const emolumentSchema = z.object({
 
 export const parishProfileSchema = z.object({
   slug: z.string().min(1, "Slug e obrigatorio"),
-  cnpj: z.string().optional(),
-  legalName: z.string().optional(),
+  cnpj: z.string().nullish(),
+  legalName: z.string().nullish(),
   parishName: z.string().min(1, "Nome da paroquia e obrigatorio"),
-  pastorName: z.string().optional(),
+  pastorName: z.string().nullish(),
   dispatchEmails: z.array(z.string().email("E-mail invalido")),
 });
 
