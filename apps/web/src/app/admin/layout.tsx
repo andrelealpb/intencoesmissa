@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, ReactNode } from 'react';
 import Link from 'next/link';
 
@@ -19,13 +19,21 @@ const navItems = [
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const isLoginPage = pathname === '/admin/login';
+
   useEffect(() => {
-    if (status === 'unauthenticated') {
+    if (status === 'unauthenticated' && !isLoginPage) {
       router.push('/admin/login');
     }
-  }, [status, router]);
+  }, [status, router, isLoginPage]);
+
+  // Login page renders without auth wrapper
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
 
   if (status === 'loading') {
     return (
