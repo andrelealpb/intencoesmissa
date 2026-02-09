@@ -3,7 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
 import * as nodemailer from "nodemailer";
 
-interface HealthStatus {
+export interface HealthStatus {
   status: "ok" | "error";
   message?: string;
 }
