@@ -19,12 +19,16 @@ export class StorageService {
     const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY || "";
 
     if (this.bucket && accessKeyId && secretAccessKey) {
-      this.client = new S3Client({
-        endpoint: process.env.S3_ENDPOINT,
+      const s3Config: any = {
         region: process.env.S3_REGION || "us-east-1",
         credentials: { accessKeyId, secretAccessKey },
-        forcePathStyle: true,
-      });
+      };
+      // Only use endpoint and forcePathStyle for S3-compatible services (MinIO, etc)
+      if (process.env.S3_ENDPOINT) {
+        s3Config.endpoint = process.env.S3_ENDPOINT;
+        s3Config.forcePathStyle = true;
+      }
+      this.client = new S3Client(s3Config);
     } else {
       this.logger.warn("S3 nao configurado. Upload/download de arquivos desabilitado.");
     }
