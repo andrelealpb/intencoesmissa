@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
-import * as nodemailer from "nodemailer";
 
 export interface HealthStatus {
   status: "ok" | "error";
@@ -37,16 +36,16 @@ export class HealthService {
     timestamp: string;
     services: Record<string, HealthStatus>;
   }> {
-    const [db, s3, smtp] = await Promise.allSettled([
+    const [db, s3, email] = await Promise.allSettled([
       this.checkDb(),
       this.checkS3(),
-      this.checkSmtp(),
+      this.checkEmail(),
     ]);
 
     const services: Record<string, HealthStatus> = {
       db: db.status === "fulfilled" ? db.value : { status: "error", message: String((db as PromiseRejectedResult).reason) },
       s3: s3.status === "fulfilled" ? s3.value : { status: "error", message: String((s3 as PromiseRejectedResult).reason) },
-      smtp: smtp.status === "fulfilled" ? smtp.value : { status: "error", message: String((smtp as PromiseRejectedResult).reason) },
+      email: email.status === "fulfilled" ? email.value : { status: "error", message: String((email as PromiseRejectedResult).reason) },
     };
 
     const allOk = Object.values(services).every((s) => s.status === "ok");
@@ -91,47 +90,40 @@ export class HealthService {
     }
   }
 
-  async checkSmtp(): Promise<HealthStatus> {
-    const host = process.env.SMTP_HOST;
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
+  async checkEmail(): Promise<HealthStatus> {
+    const apiToken = process.env.MAILERSEND_API_TOKEN;
     const from = process.env.SMTP_FROM;
 
-    if (!host || !user || !pass) {
+    if (!apiToken) {
       return {
         status: "error",
-        message: "SMTP nao configurado",
+        message: "MAILERSEND_API_TOKEN nao configurado",
         details: {
-          host: host ? "definido" : "VAZIO",
-          port: process.env.SMTP_PORT || "465 (padrao)",
-          user: user ? "definido" : "VAZIO",
-          pass: pass ? "definido" : "VAZIO",
-          from: from || "VAZIO (usara noreply@missas.app)",
+          token: "VAZIO",
+          from: from || "VAZIO",
         },
       };
     }
+
     try {
-      const port = Number(process.env.SMTP_PORT) || 465;
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure: port === 465,
-        auth: { user, pass },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
+      // Verify token by fetching account info
+      const response = await fetch("https://api.mailersend.com/v1/api-quota", {
+        headers: { Authorization: `Bearer ${apiToken}` },
       });
-      await transporter.verify();
+      if (!response.ok) {
+        const text = await response.text();
+        return {
+          status: "error",
+          message: `MailerSend API ${response.status}: ${text}`,
+          details: { from: from || "VAZIO" },
+        };
+      }
       return {
         status: "ok",
-        details: { host, from: from || "noreply@missas.app" },
+        details: { provider: "MailerSend API", from: from || "noreply@missas.app" },
       };
     } catch (error: any) {
-      return {
-        status: "error",
-        message: error.message,
-        details: { host, from: from || "noreply@missas.app" },
-      };
+      return { status: "error", message: error.message };
     }
   }
 }

@@ -1,36 +1,24 @@
 import { Injectable, Logger } from "@nestjs/common";
-import * as nodemailer from "nodemailer";
 
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private transporter: nodemailer.Transporter | null = null;
+  private apiToken: string | null = null;
+  private fromEmail: string;
 
   constructor() {
-    const host = process.env.SMTP_HOST;
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
+    this.apiToken = process.env.MAILERSEND_API_TOKEN || null;
+    this.fromEmail = process.env.SMTP_FROM || "noreply@missas.app";
 
-    if (host && user && pass) {
-      const port = Number(process.env.SMTP_PORT) || 465;
-      const secure = port === 465;
-      this.logger.log(`SMTP configurado: host=${host} port=${port} secure=${secure}`);
-      this.transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: { user, pass },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
-      });
+    if (this.apiToken) {
+      this.logger.log(`MailerSend API configurada. from=${this.fromEmail}`);
     } else {
-      this.logger.warn("SMTP nao configurado (SMTP_HOST/SMTP_USER/SMTP_PASS). Envio de e-mail desabilitado.");
+      this.logger.warn("MAILERSEND_API_TOKEN nao configurado. Envio de e-mail desabilitado.");
     }
   }
 
   isConfigured(): boolean {
-    return this.transporter !== null;
+    return this.apiToken !== null;
   }
 
   async sendDispatchEmail(
@@ -39,27 +27,44 @@ export class EmailService {
     pdfBuffer: Buffer,
     pdfFilename: string,
   ): Promise<void> {
-    if (!this.transporter) {
-      this.logger.warn(`SMTP nao configurado, ignorando envio para: ${to.join(", ")}`);
+    if (!this.apiToken) {
+      this.logger.warn(`E-mail desabilitado, ignorando envio para: ${to.join(", ")}`);
       return;
     }
-    const from = process.env.SMTP_FROM || "noreply@missas.app";
-    this.logger.log(`Enviando e-mail: from=${from} to=${to.join(", ")} subject="${subject}"`);
+
+    this.logger.log(`Enviando e-mail via MailerSend API: from=${this.fromEmail} to=${to.join(", ")} subject="${subject}"`);
+
+    const body = {
+      from: { email: this.fromEmail },
+      to: to.map((email) => ({ email })),
+      subject,
+      text: "Segue em anexo o despacho de intencoes de missa.",
+      attachments: [
+        {
+          filename: pdfFilename,
+          content: pdfBuffer.toString("base64"),
+          disposition: "attachment",
+        },
+      ],
+    };
+
     try {
-      const info = await this.transporter.sendMail({
-        from,
-        to: to.join(", "),
-        subject,
-        text: "Segue em anexo o despacho de intencoes de missa.",
-        attachments: [
-          {
-            filename: pdfFilename,
-            content: pdfBuffer,
-            contentType: "application/pdf",
-          },
-        ],
+      const response = await fetch("https://api.mailersend.com/v1/email", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
       });
-      this.logger.log(`E-mail enviado com sucesso. messageId=${info.messageId} response="${info.response}"`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`MailerSend API ${response.status}: ${errorText}`);
+      }
+
+      const messageId = response.headers.get("x-message-id") || "N/A";
+      this.logger.log(`E-mail enviado com sucesso. messageId=${messageId} status=${response.status}`);
     } catch (err: any) {
       this.logger.error(`Falha ao enviar e-mail: ${err.message}`, err.stack);
       throw err;
