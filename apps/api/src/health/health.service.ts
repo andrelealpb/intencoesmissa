@@ -103,7 +103,7 @@ export class HealthService {
         message: "SMTP nao configurado",
         details: {
           host: host ? "definido" : "VAZIO",
-          port: process.env.SMTP_PORT || "587 (padrao)",
+          port: process.env.SMTP_PORT || "465 (padrao)",
           user: user ? "definido" : "VAZIO",
           pass: pass ? "definido" : "VAZIO",
           from: from || "VAZIO (usara noreply@missas.app)",
@@ -111,10 +111,11 @@ export class HealthService {
       };
     }
     try {
+      const port = Number(process.env.SMTP_PORT) || 465;
       const transporter = nodemailer.createTransport({
         host,
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: Number(process.env.SMTP_PORT) === 465,
+        port,
+        secure: port === 465,
         auth: { user, pass },
         connectionTimeout: 10000,
         greetingTimeout: 10000,

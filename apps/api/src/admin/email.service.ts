@@ -12,10 +12,13 @@ export class EmailService {
     const pass = process.env.SMTP_PASS;
 
     if (host && user && pass) {
+      const port = Number(process.env.SMTP_PORT) || 465;
+      const secure = port === 465;
+      this.logger.log(`SMTP configurado: host=${host} port=${port} secure=${secure}`);
       this.transporter = nodemailer.createTransport({
         host,
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: Number(process.env.SMTP_PORT) === 465,
+        port,
+        secure,
         auth: { user, pass },
         connectionTimeout: 10000,
         greetingTimeout: 10000,
