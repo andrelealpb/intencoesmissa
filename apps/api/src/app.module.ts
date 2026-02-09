@@ -5,6 +5,7 @@ import { AuthModule } from "./auth/auth.module";
 import { PublicModule } from "./public/public.module";
 import { AdminModule } from "./admin/admin.module";
 import { SuperAdminModule } from "./super-admin/super-admin.module";
+import { HealthModule } from "./health/health.module";
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SuperAdminModule } from "./super-admin/super-admin.module";
     PublicModule,
     AdminModule,
     SuperAdminModule,
+    HealthModule,
   ],
 })
 export class AppModule {}
