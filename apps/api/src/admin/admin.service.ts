@@ -407,18 +407,10 @@ export class AdminService {
 
     // Download PDF from S3
     try {
-      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
-      const response = await this.storage["client"].send(
-        new GetObjectCommand({
-          Bucket: this.storage["bucket"],
-          Key: batch.pdfStorageKey,
-        }),
-      );
-      const chunks: Buffer[] = [];
-      for await (const chunk of response.Body as any) {
-        chunks.push(Buffer.from(chunk));
+      const pdfBuffer = await this.storage.getObject(batch.pdfStorageKey);
+      if (!pdfBuffer) {
+        throw new BadRequestException("PDF nao encontrado no armazenamento. S3 pode nao estar configurado.");
       }
-      const pdfBuffer = Buffer.concat(chunks);
 
       const massDateStr = batch.massDate.toISOString().split("T")[0];
       const formattedDate = `${massDateStr.split("-")[2]}/${massDateStr.split("-")[1]}/${massDateStr.split("-")[0]}`;
@@ -428,6 +420,7 @@ export class AdminService {
 
       return { message: `E-mail reenviado para: ${parish.dispatchEmails.join(", ")}` };
     } catch (err) {
+      if (err instanceof BadRequestException) throw err;
       this.logger.error("Erro ao reenviar e-mail", err);
       throw new BadRequestException("Erro ao reenviar e-mail. Verifique as configuracoes.");
     }
@@ -633,13 +626,12 @@ export class AdminService {
       throw new BadRequestException("Erro ao gerar PDF do despacho.");
     }
 
-    // Upload to S3
+    // Upload to S3 (optional — if not configured, skip)
     const storageKey = `dispatches/${parishId}/${todayStr.replace(/-/g, "")}/${massTime.replace(":", "")}.pdf`;
     try {
       await this.storage.upload(storageKey, pdfBuffer, "application/pdf");
     } catch (err) {
-      this.logger.error("Erro ao enviar PDF para S3", err);
-      throw new BadRequestException("Erro ao salvar PDF no armazenamento. Verifique as configuracoes de S3.");
+      this.logger.error("Erro ao enviar PDF para S3 (continuando sem upload)", err);
     }
 
     // Send email
