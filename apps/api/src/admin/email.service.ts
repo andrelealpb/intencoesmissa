@@ -40,18 +40,26 @@ export class EmailService {
       this.logger.warn(`SMTP nao configurado, ignorando envio para: ${to.join(", ")}`);
       return;
     }
-    await this.transporter.sendMail({
-      from: process.env.SMTP_FROM || "noreply@missas.app",
-      to: to.join(", "),
-      subject,
-      text: "Segue em anexo o despacho de intencoes de missa.",
-      attachments: [
-        {
-          filename: pdfFilename,
-          content: pdfBuffer,
-          contentType: "application/pdf",
-        },
-      ],
-    });
+    const from = process.env.SMTP_FROM || "noreply@missas.app";
+    this.logger.log(`Enviando e-mail: from=${from} to=${to.join(", ")} subject="${subject}"`);
+    try {
+      const info = await this.transporter.sendMail({
+        from,
+        to: to.join(", "),
+        subject,
+        text: "Segue em anexo o despacho de intencoes de missa.",
+        attachments: [
+          {
+            filename: pdfFilename,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+      this.logger.log(`E-mail enviado com sucesso. messageId=${info.messageId} response="${info.response}"`);
+    } catch (err: any) {
+      this.logger.error(`Falha ao enviar e-mail: ${err.message}`, err.stack);
+      throw err;
+    }
   }
 }
