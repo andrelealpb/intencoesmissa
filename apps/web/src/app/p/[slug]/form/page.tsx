@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { PhoneInput } from "@/components/phone-input";
+import { PhoneInput, formatPhone } from "@/components/phone-input";
 import { apiFetch } from "@/lib/api";
 
 // ---- Types ----
@@ -270,7 +270,7 @@ export default function IntentionFormPage() {
         massDate,
         massTime,
         faithfulName: fullName,
-        faithfulPhone: phone,
+        faithfulPhone: formatPhone(phone),
         intentions: intentions.map((i) => ({
           group: i.group,
           intentionTypeId: i.intentionTypeId,
