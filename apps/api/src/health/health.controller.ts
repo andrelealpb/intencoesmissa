@@ -20,8 +20,8 @@ export class HealthController {
     return this.healthService.checkS3();
   }
 
-  @Get("smtp")
-  async checkSmtp() {
-    return this.healthService.checkSmtp();
+  @Get("email")
+  async checkEmail() {
+    return this.healthService.checkEmail();
   }
 }
