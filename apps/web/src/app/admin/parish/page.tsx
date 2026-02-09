@@ -182,11 +182,17 @@ export default function ParishPage() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Logomarca</label>
           {parish.logoUrl ? (
-            <div className="flex items-center gap-4">
-              <img src={parish.logoUrl} alt="Logo" className="w-16 h-16 object-contain border rounded" />
-              <button onClick={handleLogoDelete} className="text-sm text-red-600 hover:underline">
-                Remover
-              </button>
+            <div className="flex items-start gap-4">
+              <img src={parish.logoUrl} alt="Logo" className="w-20 h-20 object-contain border rounded" />
+              <div className="flex flex-col gap-2 pt-1">
+                <label className="text-sm text-blue-600 hover:underline cursor-pointer">
+                  Alterar
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                </label>
+                <button onClick={handleLogoDelete} className="text-sm text-red-600 hover:underline text-left">
+                  Excluir
+                </button>
+              </div>
             </div>
           ) : (
             <input type="file" accept="image/*" onChange={handleLogoUpload} className="text-sm" />
@@ -235,16 +241,24 @@ export default function ParishPage() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">QR Code PIX</label>
               {parish.pixQrCodeUrl ? (
-                <div className="flex items-center gap-4">
+                <div className="flex items-start gap-4">
                   <img src={parish.pixQrCodeUrl} alt="QR Code PIX" className="w-32 h-32 object-contain border rounded" />
-                  <button onClick={handlePixQrDelete} className="text-sm text-red-600 hover:underline">
-                    Remover
-                  </button>
+                  <div className="flex flex-col gap-2 pt-1">
+                    <label className="text-sm text-blue-600 hover:underline cursor-pointer">
+                      Alterar
+                      <input type="file" accept="image/*" onChange={handlePixQrUpload} className="hidden" />
+                    </label>
+                    <button onClick={handlePixQrDelete} className="text-sm text-red-600 hover:underline text-left">
+                      Excluir
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <input type="file" accept="image/*" onChange={handlePixQrUpload} className="text-sm" />
+                <>
+                  <input type="file" accept="image/*" onChange={handlePixQrUpload} className="text-sm" />
+                  <p className="text-xs text-gray-500 mt-1">Envie a imagem do QR Code gerado pelo seu banco.</p>
+                </>
               )}
-              <p className="text-xs text-gray-500 mt-1">Envie a imagem do QR Code gerado pelo seu banco.</p>
             </div>
           </div>
         </div>
