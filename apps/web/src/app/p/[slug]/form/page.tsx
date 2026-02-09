@@ -71,6 +71,7 @@ export default function IntentionFormPage() {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [pixCopied, setPixCopied] = useState(false);
 
   const [phone, setPhone] = useState("");
   const [fullName, setFullName] = useState("");
@@ -512,12 +513,23 @@ export default function IntentionFormPage() {
                   )}
 
                   {parish?.pixKey && (
-                    <div className="bg-gray-50 rounded-lg px-4 py-3 inline-block">
-                      <p className="text-xs text-gray-500 mb-0.5">Chave PIX</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(parish.pixKey!);
+                        setPixCopied(true);
+                        setTimeout(() => setPixCopied(false), 2500);
+                      }}
+                      className="bg-gray-50 hover:bg-gray-100 active:bg-gray-200 rounded-lg px-4 py-3 inline-block transition-colors cursor-pointer border border-transparent hover:border-gray-200"
+                    >
+                      <p className="text-xs text-gray-500 mb-0.5">Chave PIX — toque para copiar</p>
                       <p className="text-sm font-mono font-medium text-gray-800 break-all">
                         {parish.pixKey}
                       </p>
-                    </div>
+                      {pixCopied && (
+                        <p className="text-xs text-green-600 font-medium mt-1">Chave copiada!</p>
+                      )}
+                    </button>
                   )}
                 </div>
               </Card>
