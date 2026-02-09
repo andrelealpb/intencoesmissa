@@ -1,20 +1,33 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import * as nodemailer from "nodemailer";
 
 @Injectable()
 export class EmailService {
-  private transporter: nodemailer.Transporter;
+  private readonly logger = new Logger(EmailService.name);
+  private transporter: nodemailer.Transporter | null = null;
 
   constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: Number(process.env.SMTP_PORT) === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+    const host = process.env.SMTP_HOST;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+
+    if (host && user && pass) {
+      this.transporter = nodemailer.createTransport({
+        host,
+        port: Number(process.env.SMTP_PORT) || 587,
+        secure: Number(process.env.SMTP_PORT) === 465,
+        auth: { user, pass },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+      });
+    } else {
+      this.logger.warn("SMTP nao configurado (SMTP_HOST/SMTP_USER/SMTP_PASS). Envio de e-mail desabilitado.");
+    }
+  }
+
+  isConfigured(): boolean {
+    return this.transporter !== null;
   }
 
   async sendDispatchEmail(
@@ -23,6 +36,10 @@ export class EmailService {
     pdfBuffer: Buffer,
     pdfFilename: string,
   ): Promise<void> {
+    if (!this.transporter) {
+      this.logger.warn(`SMTP nao configurado, ignorando envio para: ${to.join(", ")}`);
+      return;
+    }
     await this.transporter.sendMail({
       from: process.env.SMTP_FROM || "noreply@missas.app",
       to: to.join(", "),
