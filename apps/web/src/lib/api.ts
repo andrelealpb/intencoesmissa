@@ -12,7 +12,9 @@ export async function apiFetch(path: string, options?: RequestInit) {
     const error = await res.json().catch(() => ({ message: res.statusText }));
     throw new Error(error.message || "API Error");
   }
-  return res.json();
+  const text = await res.text();
+  if (!text) return null;
+  return JSON.parse(text);
 }
 
 export async function apiAuthFetch(

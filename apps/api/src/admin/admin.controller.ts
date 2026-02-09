@@ -260,6 +260,11 @@ export class AdminController {
     return this.adminService.listDispatches(getParishId(req));
   }
 
+  @Get("dispatches/next-mass")
+  getNextMass(@Req() req: AuthenticatedRequest) {
+    return this.adminService.getNextMass(getParishId(req));
+  }
+
   @Get("dispatches/:id/download")
   downloadDispatch(
     @Req() req: AuthenticatedRequest,
@@ -268,17 +273,12 @@ export class AdminController {
     return this.adminService.downloadDispatch(getParishId(req), id);
   }
 
-  @Get("dispatches/next-mass")
-  getNextMass(@Req() req: AuthenticatedRequest) {
-    return this.adminService.getNextMass(getParishId(req));
-  }
-
   @Post("dispatches/run-now")
   runDispatchNow(
     @Req() req: AuthenticatedRequest,
-    @Body() body: { massTime: string },
+    @Body() body: { massTime: string; massDate?: string },
   ) {
-    return this.adminService.runDispatchNow(getParishId(req), body.massTime);
+    return this.adminService.runDispatchNow(getParishId(req), body.massTime, body.massDate);
   }
 
   // ── Dashboard ──────────────────────────────────────────

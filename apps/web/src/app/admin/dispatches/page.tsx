@@ -16,10 +16,11 @@ interface Dispatch {
 }
 
 interface NextMass {
-  massDate: string;
-  massTime: string;
+  found: boolean;
+  massDate?: string;
+  massTime?: string;
   title?: string | null;
-  pendingIntentions: number;
+  pendingIntentions?: number;
 }
 
 export default function DispatchesPage() {
@@ -49,8 +50,8 @@ export default function DispatchesPage() {
     setLoadingNext(true);
     try {
       const data = await apiAuthFetch('/admin/dispatches/next-mass', token);
-      if (!data) {
-        alert('Nenhuma missa pendente para hoje.');
+      if (!data || !data.found) {
+        alert('Nenhuma missa pendente nos proximos 7 dias.');
         return;
       }
       setNextMass(data);
@@ -68,7 +69,7 @@ export default function DispatchesPage() {
     try {
       const result = await apiAuthFetch('/admin/dispatches/run-now', token, {
         method: 'POST',
-        body: JSON.stringify({ massTime: nextMass.massTime }),
+        body: JSON.stringify({ massTime: nextMass.massTime, massDate: nextMass.massDate }),
       });
       alert(result.message);
       setShowConfirm(false);
@@ -121,10 +122,10 @@ export default function DispatchesPage() {
                 {nextMass.title && <span className="text-gray-500"> ({nextMass.title})</span>}
               </p>
               <p className="text-sm">
-                <strong>Data:</strong> {nextMass.massDate.split('-').reverse().join('/')}
+                <strong>Data:</strong> {nextMass.massDate?.split('-').reverse().join('/')}
               </p>
               <p className="text-sm">
-                <strong>Intencoes pendentes:</strong> {nextMass.pendingIntentions}
+                <strong>Intencoes pendentes:</strong> {nextMass.pendingIntentions ?? 0}
               </p>
             </div>
             <p className="text-xs text-amber-600 mb-4">

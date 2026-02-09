@@ -338,67 +338,80 @@ export class AdminService {
     const spNow = new Date(
       now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }),
     );
-    const todayStr = `${spNow.getFullYear()}-${String(spNow.getMonth() + 1).padStart(2, "0")}-${String(spNow.getDate()).padStart(2, "0")}`;
-    const todayDate = new Date(todayStr + "T00:00:00.000Z");
-    const weekday = spNow.getDay();
 
-    // Check exceptions for today
-    const exceptions = await this.prisma.massException.findMany({
-      where: { parishId, date: todayDate, isActive: true },
-      orderBy: { time: "asc" },
-    });
+    // Check today and next 7 days
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const targetDate = new Date(spNow);
+      targetDate.setDate(targetDate.getDate() + dayOffset);
 
-    let massTimes: { time: string; title?: string | null }[] = [];
-    if (exceptions.length > 0) {
-      massTimes = exceptions.map((e) => ({ time: e.time, title: e.title }));
-    } else {
-      const schedules = await this.prisma.massSchedule.findMany({
-        where: { parishId, weekday, isActive: true },
+      const dateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
+      const dateObj = new Date(dateStr + "T00:00:00.000Z");
+      const weekday = targetDate.getDay();
+
+      // Check exceptions for this day
+      const exceptions = await this.prisma.massException.findMany({
+        where: { parishId, date: dateObj, isActive: true },
         orderBy: { time: "asc" },
       });
-      massTimes = schedules.map((s) => ({ time: s.time, title: null }));
-    }
 
-    // Find the next mass that hasn't been dispatched yet
-    for (const mass of massTimes) {
-      const existingBatch = await this.prisma.dispatchBatch.findFirst({
-        where: {
-          parishId,
-          massDate: todayDate,
-          massTime: mass.time,
-          status: "SENT",
-        },
-      });
-      if (!existingBatch) {
-        const pendingCount = await this.prisma.requestIntention.count({
+      let massTimes: { time: string; title?: string | null }[] = [];
+      if (exceptions.length > 0) {
+        massTimes = exceptions.map((e) => ({ time: e.time, title: e.title }));
+      } else {
+        const schedules = await this.prisma.massSchedule.findMany({
+          where: { parishId, weekday, isActive: true },
+          orderBy: { time: "asc" },
+        });
+        massTimes = schedules.map((s) => ({ time: s.time, title: null }));
+      }
+
+      // Find the next mass that hasn't been dispatched yet
+      for (const mass of massTimes) {
+        const existingBatch = await this.prisma.dispatchBatch.findFirst({
           where: {
-            dispatchedAt: null,
-            request: {
-              parishId,
-              status: "SUBMITTED",
-              massDate: todayDate,
-              massTime: mass.time,
-            },
+            parishId,
+            massDate: dateObj,
+            massTime: mass.time,
+            status: "SENT",
           },
         });
-        return {
-          massDate: todayStr,
-          massTime: mass.time,
-          title: mass.title,
-          pendingIntentions: pendingCount,
-        };
+        if (!existingBatch) {
+          const pendingCount = await this.prisma.requestIntention.count({
+            where: {
+              dispatchedAt: null,
+              request: {
+                parishId,
+                status: "SUBMITTED",
+                massDate: dateObj,
+                massTime: mass.time,
+              },
+            },
+          });
+          return {
+            found: true,
+            massDate: dateStr,
+            massTime: mass.time,
+            title: mass.title,
+            pendingIntentions: pendingCount,
+          };
+        }
       }
     }
 
-    return null;
+    return { found: false };
   }
 
-  async runDispatchNow(parishId: string, massTime: string) {
-    const now = new Date();
-    const spNow = new Date(
-      now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }),
-    );
-    const todayStr = `${spNow.getFullYear()}-${String(spNow.getMonth() + 1).padStart(2, "0")}-${String(spNow.getDate()).padStart(2, "0")}`;
+  async runDispatchNow(parishId: string, massTime: string, massDateStr?: string) {
+    let todayStr: string;
+    if (massDateStr) {
+      todayStr = massDateStr;
+    } else {
+      const now = new Date();
+      const spNow = new Date(
+        now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }),
+      );
+      todayStr = `${spNow.getFullYear()}-${String(spNow.getMonth() + 1).padStart(2, "0")}-${String(spNow.getDate()).padStart(2, "0")}`;
+    }
     const todayDate = new Date(todayStr + "T00:00:00.000Z");
 
     const pendingIntentions = await this.prisma.requestIntention.findMany({
