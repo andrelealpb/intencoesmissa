@@ -265,12 +265,36 @@ export class AdminController {
     return this.adminService.getNextMass(getParishId(req));
   }
 
+  @Get("dispatches/:id/details")
+  getDispatchDetails(
+    @Req() req: AuthenticatedRequest,
+    @Param("id") id: string,
+  ) {
+    return this.adminService.getDispatchDetails(getParishId(req), id);
+  }
+
   @Get("dispatches/:id/download")
   downloadDispatch(
     @Req() req: AuthenticatedRequest,
     @Param("id") id: string,
   ) {
     return this.adminService.downloadDispatch(getParishId(req), id);
+  }
+
+  @Post("dispatches/:id/reopen")
+  reopenDispatch(
+    @Req() req: AuthenticatedRequest,
+    @Param("id") id: string,
+  ) {
+    return this.adminService.reopenDispatch(getParishId(req), id);
+  }
+
+  @Post("dispatches/:id/resend")
+  resendDispatchEmail(
+    @Req() req: AuthenticatedRequest,
+    @Param("id") id: string,
+  ) {
+    return this.adminService.resendDispatchEmail(getParishId(req), id);
   }
 
   @Post("dispatches/run-now")

@@ -326,6 +326,25 @@ export class AdminService {
     });
   }
 
+  async getDispatchDetails(parishId: string, id: string) {
+    const batch = await this.prisma.dispatchBatch.findUnique({
+      where: { id },
+      include: {
+        intentions: {
+          include: {
+            intentionType: { select: { name: true, group: true } },
+            request: { select: { faithfulName: true, faithfulPhone: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+    if (!batch || batch.parishId !== parishId) {
+      throw new NotFoundException("Despacho nao encontrado");
+    }
+    return batch;
+  }
+
   async downloadDispatch(parishId: string, id: string) {
     const batch = await this.prisma.dispatchBatch.findUnique({
       where: { id },
@@ -333,8 +352,85 @@ export class AdminService {
     if (!batch || batch.parishId !== parishId) {
       throw new NotFoundException("Despacho nao encontrado");
     }
+    if (!batch.pdfStorageKey) {
+      throw new BadRequestException("Este despacho nao possui PDF (0 intencoes).");
+    }
     const url = await this.storage.getSignedUrl(batch.pdfStorageKey);
     return { url };
+  }
+
+  async reopenDispatch(parishId: string, id: string) {
+    const batch = await this.prisma.dispatchBatch.findUnique({
+      where: { id },
+      include: { intentions: true },
+    });
+    if (!batch || batch.parishId !== parishId) {
+      throw new NotFoundException("Despacho nao encontrado");
+    }
+
+    // Un-dispatch all intentions
+    if (batch.intentions.length > 0) {
+      const intentionIds = batch.intentions.map((i) => i.id);
+      await this.prisma.requestIntention.updateMany({
+        where: { id: { in: intentionIds } },
+        data: { dispatchedAt: null, dispatchBatchId: null },
+      });
+    }
+
+    // Delete the batch
+    await this.prisma.dispatchBatch.delete({ where: { id } });
+
+    // Delete PDF from S3 if exists
+    if (batch.pdfStorageKey) {
+      await this.storage.delete(batch.pdfStorageKey).catch(() => {});
+    }
+
+    return { message: "Despacho reaberto. As intencoes voltaram ao estado pendente." };
+  }
+
+  async resendDispatchEmail(parishId: string, id: string) {
+    const batch = await this.prisma.dispatchBatch.findUnique({
+      where: { id },
+    });
+    if (!batch || batch.parishId !== parishId) {
+      throw new NotFoundException("Despacho nao encontrado");
+    }
+    if (!batch.pdfStorageKey) {
+      throw new BadRequestException("Este despacho nao possui PDF para reenviar.");
+    }
+
+    const parish = await this.prisma.parish.findUnique({ where: { id: parishId } });
+    if (!parish) throw new NotFoundException("Paroquia nao encontrada");
+    if (!parish.dispatchEmails || parish.dispatchEmails.length === 0) {
+      throw new BadRequestException("Nenhum e-mail de despacho configurado na paroquia.");
+    }
+
+    // Download PDF from S3
+    try {
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const response = await this.storage["client"].send(
+        new GetObjectCommand({
+          Bucket: this.storage["bucket"],
+          Key: batch.pdfStorageKey,
+        }),
+      );
+      const chunks: Buffer[] = [];
+      for await (const chunk of response.Body as any) {
+        chunks.push(Buffer.from(chunk));
+      }
+      const pdfBuffer = Buffer.concat(chunks);
+
+      const massDateStr = batch.massDate.toISOString().split("T")[0];
+      const formattedDate = `${massDateStr.split("-")[2]}/${massDateStr.split("-")[1]}/${massDateStr.split("-")[0]}`;
+      const pdfFilename = `intencoes_${massDateStr.replace(/-/g, "")}_${(batch.massTime || "").replace(":", "")}.pdf`;
+      const subject = `[Reenvio] Intencoes da Missa - ${parish.parishName} - ${formattedDate} ${batch.massTime || ""}`;
+      await this.email.sendDispatchEmail(parish.dispatchEmails, subject, pdfBuffer, pdfFilename);
+
+      return { message: `E-mail reenviado para: ${parish.dispatchEmails.join(", ")}` };
+    } catch (err) {
+      this.logger.error("Erro ao reenviar e-mail", err);
+      throw new BadRequestException("Erro ao reenviar e-mail. Verifique as configuracoes.");
+    }
   }
 
   async getNextMass(parishId: string) {
