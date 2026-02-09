@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -77,7 +77,6 @@ function emptyIntention(): IntentionEntry {
 
 export default function IntentionFormPage() {
   const params = useParams<{ slug: string }>();
-  const router = useRouter();
   const slug = params.slug;
 
   // Step state
@@ -178,6 +177,39 @@ export default function IntentionFormPage() {
 
   // ---- Handlers ----
 
+  const submitRequest = async () => {
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const payload = {
+        massDate,
+        massTime,
+        faithfulName: fullName,
+        faithfulPhone: formatPhone(phone),
+        intentions: intentions.map((i) => ({
+          group: i.group,
+          intentionTypeId: i.intentionTypeId,
+          deceasedName: i.deceasedName || undefined,
+          familyNames: i.familyNames || undefined,
+          complement: i.complement || undefined,
+          notes: i.notes || undefined,
+        })),
+      };
+
+      await apiFetch(`/public/parishes/${slug}/requests`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      setStep(2); // go to confirmation
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erro ao enviar pedido.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const nextStep = () => {
     setError("");
     if (step === 0) {
@@ -191,6 +223,8 @@ export default function IntentionFormPage() {
       }
       if (!massDate) { setError("Selecione uma data."); return; }
       if (!massTime) { setError("Selecione um horário."); return; }
+      setStep(1);
+      return;
     }
     if (step === 1) {
       const invalid = intentions.some((i) => !i.group || !i.intentionTypeId);
@@ -215,13 +249,26 @@ export default function IntentionFormPage() {
           return;
         }
       }
+      // Validate OK → submit request
+      submitRequest();
+      return;
     }
-    setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
 
   const prevStep = () => {
     setError("");
     setStep((s) => Math.max(s - 1, 0));
+  };
+
+  const handleNewRequest = () => {
+    setStep(0);
+    setPhone("");
+    setFullName("");
+    setMassDate("");
+    setMassTime("");
+    setMassOptions([]);
+    setIntentions([emptyIntention()]);
+    setError("");
   };
 
   const addIntention = () => {
@@ -259,39 +306,6 @@ export default function IntentionFormPage() {
         return updated;
       })
     );
-  };
-
-  const handleSubmit = async () => {
-    setSubmitting(true);
-    setError("");
-
-    try {
-      const payload = {
-        massDate,
-        massTime,
-        faithfulName: fullName,
-        faithfulPhone: formatPhone(phone),
-        intentions: intentions.map((i) => ({
-          group: i.group,
-          intentionTypeId: i.intentionTypeId,
-          deceasedName: i.deceasedName || undefined,
-          familyNames: i.familyNames || undefined,
-          complement: i.complement || undefined,
-          notes: i.notes || undefined,
-        })),
-      };
-
-      const result = await apiFetch(`/public/parishes/${slug}/requests`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-
-      router.push(`/p/${slug}/success?protocol=${result.protocol}`);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Erro ao enviar pedido.");
-    } finally {
-      setSubmitting(false);
-    }
   };
 
   // ---- Render ----
@@ -437,11 +451,10 @@ export default function IntentionFormPage() {
                   <p className="text-sm font-medium text-gray-500">Intenção {index + 1}</p>
 
                   <Select
-                    label="Grupo"
                     options={GROUP_OPTIONS}
                     value={intention.group}
                     onChange={(e) => updateIntention(index, "group", e.target.value)}
-                    placeholder="Selecione o grupo"
+                    placeholder="Selecione sua intenção"
                   />
                   {intention.group && (() => {
                     const groupInfo = GROUP_OPTIONS.find((g) => g.value === intention.group);
@@ -452,14 +465,13 @@ export default function IntentionFormPage() {
 
                   {intention.group && (
                     <Select
-                      label="Tipo"
                       options={(typesByGroup[intention.group] || []).map((t) => ({
                         value: t.id,
                         label: t.name,
                       }))}
                       value={intention.intentionTypeId}
                       onChange={(e) => updateIntention(index, "intentionTypeId", e.target.value)}
-                      placeholder="Selecione o tipo"
+                      placeholder="Intenção por..."
                     />
                   )}
 
@@ -516,92 +528,39 @@ export default function IntentionFormPage() {
           </div>
         )}
 
-        {/* Step 3: Confirmação */}
+        {/* Step 3: Confirmação (post-submit) */}
         {step === 2 && (
           <div className="space-y-6">
-            <Card title="Confirmação">
-              <div className="space-y-4">
-                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Nome:</span>
-                    <span className="font-medium text-gray-900">{fullName}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Telefone:</span>
-                    <span className="font-medium text-gray-900">{phone}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Data:</span>
-                    <span className="font-medium text-gray-900">
-                      {new Date(massDate + "T12:00:00").toLocaleDateString("pt-BR")}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-500">Horário:</span>
-                    <span className="font-medium text-gray-900">{massTime}</span>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                    Intenções ({intentions.length})
-                  </h4>
-                  <div className="space-y-2">
-                    {intentions.map((intention, index) => {
-                      const groupLabel = GROUP_OPTIONS.find((g) => g.value === intention.group)?.label || intention.group;
-                      const type = getTypeForIntention(intention);
-                      const suggested = resolveSuggestedValue(intention.group, intention.intentionTypeId);
-                      return (
-                        <div key={index} className="bg-gray-50 rounded-lg p-3 text-sm">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-gray-900">
-                                {index + 1}. {type?.name || "—"}
-                              </span>
-                              <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
-                                {groupLabel}
-                              </span>
-                            </div>
-                            {suggested !== null && (
-                              <span className="text-xs text-gray-500">
-                                R$ {suggested.toFixed(2)}
-                              </span>
-                            )}
-                          </div>
-                          {intention.deceasedName && (
-                            <p className="text-gray-600">Falecido(a): {intention.deceasedName}</p>
-                          )}
-                          {intention.familyNames && (
-                            <p className="text-gray-600">Famílias: {intention.familyNames}</p>
-                          )}
-                          {intention.complement && (
-                            <p className="text-gray-600">Complemento: {intention.complement}</p>
-                          )}
-                          {intention.notes && (
-                            <p className="text-gray-600">Obs: {intention.notes}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+            <Card>
+              <div className="text-center space-y-3">
+                <svg className="w-16 h-16 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h3 className="text-xl font-bold text-gray-900">
+                  Intenção registrada com sucesso!
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Sua intenção foi recebida pela paróquia.
+                </p>
               </div>
             </Card>
 
-            {/* Oferta Sugerida */}
-            {totalSuggested > 0 && (
+            {/* Oferta Sugerida + PIX */}
+            {(totalSuggested > 0 || parish?.pixQrCodeUrl || parish?.pixKey) && (
               <Card>
                 <div className="text-center space-y-4">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Oferta Sugerida</p>
-                    <p className="text-3xl font-bold text-primary-700">
-                      R$ {totalSuggested.toFixed(2)}
-                    </p>
-                  </div>
+                  {totalSuggested > 0 && (
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Oferta Sugerida</p>
+                      <p className="text-3xl font-bold text-primary-700">
+                        R$ {totalSuggested.toFixed(2)}
+                      </p>
+                    </div>
+                  )}
 
                   {/* PIX QR Code */}
                   {parish?.pixQrCodeUrl && (
-                    <div className="border-t pt-4">
+                    <div className={totalSuggested > 0 ? "border-t pt-4" : ""}>
                       <p className="text-sm font-medium text-gray-700 mb-2">Pague via PIX</p>
                       <img
                         src={parish.pixQrCodeUrl}
@@ -618,7 +577,7 @@ export default function IntentionFormPage() {
 
                   {/* PIX key only (no QR code) */}
                   {!parish?.pixQrCodeUrl && parish?.pixKey && (
-                    <div className="border-t pt-4">
+                    <div className={totalSuggested > 0 ? "border-t pt-4" : ""}>
                       <p className="text-sm font-medium text-gray-700 mb-1">Pague via PIX</p>
                       <p className="text-sm text-gray-600">
                         Chave: <span className="font-mono font-medium">{parish.pixKey}</span>
@@ -629,44 +588,30 @@ export default function IntentionFormPage() {
               </Card>
             )}
 
-            {/* PIX info when no emolument configured */}
-            {totalSuggested === 0 && (parish?.pixQrCodeUrl || parish?.pixKey) && (
-              <Card>
-                <div className="text-center space-y-3">
-                  {parish.pixQrCodeUrl && (
-                    <>
-                      <p className="text-sm font-medium text-gray-700">Oferta via PIX</p>
-                      <img
-                        src={parish.pixQrCodeUrl}
-                        alt="QR Code PIX"
-                        className="w-48 h-48 mx-auto border rounded-lg"
-                      />
-                    </>
-                  )}
-                  {parish.pixKey && (
-                    <p className="text-xs text-gray-500">
-                      Chave PIX: <span className="font-mono">{parish.pixKey}</span>
-                    </p>
-                  )}
-                </div>
-              </Card>
-            )}
+            {/* Nova Intenção */}
+            <div className="text-center">
+              <Button onClick={handleNewRequest}>
+                Nova Intenção
+              </Button>
+            </div>
           </div>
         )}
 
-        {/* Navigation */}
-        <div className="flex justify-between mt-6">
-          <Button variant="secondary" onClick={prevStep} disabled={step === 0}>
-            Voltar
-          </Button>
-          {step < STEPS.length - 1 ? (
-            <Button onClick={nextStep}>Próximo</Button>
-          ) : (
-            <Button onClick={handleSubmit} loading={submitting}>
-              Enviar Pedido
+        {/* Navigation (only on steps 0 and 1) */}
+        {step < 2 && (
+          <div className="flex justify-between mt-6">
+            {step > 0 ? (
+              <Button variant="secondary" onClick={prevStep}>
+                Voltar
+              </Button>
+            ) : (
+              <div />
+            )}
+            <Button onClick={nextStep} loading={submitting}>
+              {step === 1 ? "Registrar Intenção" : "Próximo"}
             </Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </main>
   );
