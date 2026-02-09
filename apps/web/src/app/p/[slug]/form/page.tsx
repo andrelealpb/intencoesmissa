@@ -36,8 +36,13 @@ interface IntentionEntry {
   offeredValue: string;
 }
 
-interface LimitInfo {
-  maxIntentionsPerRequest: number;
+interface Emolument {
+  id: string;
+  scope: "DEFAULT" | "GROUP" | "TYPE";
+  group: string | null;
+  intentionTypeId: string | null;
+  suggestedValue: string | number;
+  isActive: boolean;
 }
 
 const GROUP_OPTIONS = [
@@ -50,6 +55,7 @@ const STEPS = [
   "Identificação",
   "Data e Horário",
   "Intenções",
+  "Oferta",
   "Confirmação",
 ];
 
@@ -90,7 +96,8 @@ export default function IntentionFormPage() {
   // Step 3: Intentions
   const [intentions, setIntentions] = useState<IntentionEntry[]>([emptyIntention()]);
   const [typesByGroup, setTypesByGroup] = useState<Record<string, IntentionType[]>>({});
-  const [limit, setLimit] = useState<LimitInfo>({ maxIntentionsPerRequest: 10 });
+  const [maxIntentions, setMaxIntentions] = useState(10);
+  const [emoluments, setEmoluments] = useState<Emolument[]>([]);
 
   // Fetch mass options when date changes
   useEffect(() => {
@@ -119,10 +126,13 @@ export default function IntentionFormPage() {
     [slug, typesByGroup]
   );
 
-  // Fetch limits
+  // Fetch limits and emoluments
   useEffect(() => {
     apiFetch(`/public/parishes/${slug}/limits`)
-      .then((data) => setLimit(data))
+      .then((data) => {
+        setMaxIntentions(data.maxIntentionsPerRequest ?? 10);
+        setEmoluments(data.emoluments ?? []);
+      })
       .catch(() => {});
   }, [slug]);
 
@@ -131,6 +141,23 @@ export default function IntentionFormPage() {
   const getTypeForIntention = (intention: IntentionEntry): IntentionType | undefined => {
     const types = typesByGroup[intention.group] || [];
     return types.find((t) => t.id === intention.intentionTypeId);
+  };
+
+  const resolveSuggestedValue = (group: string, intentionTypeId: string): number | null => {
+    const byType = emoluments.find(
+      (e) => e.scope === "TYPE" && e.intentionTypeId === intentionTypeId
+    );
+    if (byType) return Number(byType.suggestedValue);
+
+    const byGroup = emoluments.find(
+      (e) => e.scope === "GROUP" && e.group === group
+    );
+    if (byGroup) return Number(byGroup.suggestedValue);
+
+    const byDefault = emoluments.find((e) => e.scope === "DEFAULT");
+    if (byDefault) return Number(byDefault.suggestedValue);
+
+    return null;
   };
 
   // ---- Handlers ----
@@ -176,6 +203,19 @@ export default function IntentionFormPage() {
         }
       }
     }
+    // When moving to the Oferta step, pre-populate suggested values
+    if (step === 2) {
+      setIntentions((prev) =>
+        prev.map((intent) => {
+          if (intent.offeredValue) return intent; // keep user-modified value
+          const suggested = resolveSuggestedValue(intent.group, intent.intentionTypeId);
+          return {
+            ...intent,
+            offeredValue: suggested !== null ? suggested.toFixed(2) : "",
+          };
+        })
+      );
+    }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
 
@@ -185,8 +225,8 @@ export default function IntentionFormPage() {
   };
 
   const addIntention = () => {
-    if (intentions.length >= limit.maxIntentionsPerRequest) {
-      setError(`Limite de ${limit.maxIntentionsPerRequest} intenções por pedido.`);
+    if (intentions.length >= maxIntentions) {
+      setError(`Limite de ${maxIntentions} intenções por pedido.`);
       return;
     }
     setIntentions([...intentions, emptyIntention()]);
@@ -361,13 +401,13 @@ export default function IntentionFormPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                Intenções ({intentions.length}/{limit.maxIntentionsPerRequest})
+                Intenções ({intentions.length}/{maxIntentions})
               </h3>
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={addIntention}
-                disabled={intentions.length >= limit.maxIntentionsPerRequest}
+                disabled={intentions.length >= maxIntentions}
               >
                 + Adicionar
               </Button>
@@ -465,24 +505,73 @@ export default function IntentionFormPage() {
                       </>
                     );
                   })()}
-
-                  <Input
-                    label="Oferta (opcional)"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={intention.offeredValue}
-                    onChange={(e) => updateIntention(index, "offeredValue", e.target.value)}
-                    placeholder="R$ 0,00"
-                  />
                 </div>
               </Card>
             ))}
           </div>
         )}
 
-        {/* Step 4: Confirmation */}
+        {/* Step 4: Oferta */}
         {step === 3 && (
+          <Card title="Oferta Sugerida">
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Com base no tipo de cada intenção, segue a oferta sugerida pela paróquia. Você pode alterar os valores se desejar.
+              </p>
+
+              <div className="space-y-3">
+                {intentions.map((intention, index) => {
+                  const type = getTypeForIntention(intention);
+                  const suggested = resolveSuggestedValue(intention.group, intention.intentionTypeId);
+                  return (
+                    <div key={index} className="bg-gray-50 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="text-sm font-medium text-gray-900">
+                            {index + 1}. {type?.name || "—"}
+                          </span>
+                          {intention.deceasedName && (
+                            <span className="text-xs text-gray-500 ml-2">({intention.deceasedName})</span>
+                          )}
+                        </div>
+                        {suggested !== null && (
+                          <span className="text-xs text-gray-500">
+                            Sugerido: R$ {suggested.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600">R$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={intention.offeredValue}
+                          onChange={(e) => updateIntention(index, "offeredValue", e.target.value)}
+                          className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                          placeholder={suggested !== null ? suggested.toFixed(2) : "0.00"}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Total */}
+              <div className="border-t pt-3 mt-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-gray-700">Total:</span>
+                  <span className="text-lg font-bold text-primary-700">
+                    R$ {intentions.reduce((sum, i) => sum + (parseFloat(i.offeredValue) || 0), 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Step 5: Confirmation */}
+        {step === 4 && (
           <Card title="Confirmação">
             <div className="space-y-4">
               <div className="bg-gray-50 rounded-lg p-4 space-y-2">
@@ -537,13 +626,23 @@ export default function IntentionFormPage() {
                           <p className="text-gray-600">Obs: {intention.notes}</p>
                         )}
                         {intention.offeredValue && (
-                          <p className="text-gray-600">
+                          <p className="text-gray-600 font-medium">
                             Oferta: R$ {parseFloat(intention.offeredValue).toFixed(2)}
                           </p>
                         )}
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Total */}
+              <div className="border-t pt-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-gray-700">Total da Oferta:</span>
+                  <span className="text-lg font-bold text-primary-700">
+                    R$ {intentions.reduce((sum, i) => sum + (parseFloat(i.offeredValue) || 0), 0).toFixed(2)}
+                  </span>
                 </div>
               </div>
             </div>
