@@ -14,6 +14,7 @@ const navItems = [
   { href: '/admin/emoluments', label: 'Emolumentos' },
   { href: '/admin/dispatches', label: 'Disparos' },
   { href: '/admin/requests', label: 'Pedidos' },
+  { href: '/admin/public-link', label: 'Link do Fiel' },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
