@@ -33,7 +33,6 @@ interface IntentionEntry {
   familyNames: string;
   complement: string;
   notes: string;
-  offeredValue: string;
 }
 
 interface Emolument {
@@ -45,6 +44,12 @@ interface Emolument {
   isActive: boolean;
 }
 
+interface ParishInfo {
+  parishName: string;
+  pixKey?: string | null;
+  pixQrCodeUrl?: string | null;
+}
+
 const GROUP_OPTIONS = [
   { value: "SUFRAGIO", label: "Sufrágio", tooltip: "Intenções aos falecidos e almas do purgatório" },
   { value: "SUPLICAS", label: "Súplicas", tooltip: "Pedidos que devemos elevar ao céu, ex: pela saúde, por uma família..." },
@@ -52,10 +57,8 @@ const GROUP_OPTIONS = [
 ];
 
 const STEPS = [
-  "Identificação",
-  "Data e Horário",
+  "Dados e Horário",
   "Intenções",
-  "Oferta",
   "Confirmação",
 ];
 
@@ -67,7 +70,6 @@ function emptyIntention(): IntentionEntry {
     familyNames: "",
     complement: "",
     notes: "",
-    offeredValue: "",
   };
 }
 
@@ -83,21 +85,29 @@ export default function IntentionFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Step 1: Identification
+  // Step 1: Identification + Date & Time
   const [phone, setPhone] = useState("");
   const [fullName, setFullName] = useState("");
-
-  // Step 2: Date & Time
   const [massDate, setMassDate] = useState("");
   const [massTime, setMassTime] = useState("");
   const [massOptions, setMassOptions] = useState<MassOption[]>([]);
   const [loadingMasses, setLoadingMasses] = useState(false);
 
-  // Step 3: Intentions
+  // Step 2: Intentions
   const [intentions, setIntentions] = useState<IntentionEntry[]>([emptyIntention()]);
   const [typesByGroup, setTypesByGroup] = useState<Record<string, IntentionType[]>>({});
   const [maxIntentions, setMaxIntentions] = useState(10);
   const [emoluments, setEmoluments] = useState<Emolument[]>([]);
+
+  // Parish data (for PIX)
+  const [parish, setParish] = useState<ParishInfo | null>(null);
+
+  // Fetch parish info
+  useEffect(() => {
+    apiFetch(`/public/parishes/${slug}`)
+      .then(setParish)
+      .catch(() => {});
+  }, [slug]);
 
   // Fetch mass options when date changes
   useEffect(() => {
@@ -160,6 +170,12 @@ export default function IntentionFormPage() {
     return null;
   };
 
+  const totalSuggested = intentions.reduce((sum, i) => {
+    if (!i.group || !i.intentionTypeId) return sum;
+    const val = resolveSuggestedValue(i.group, i.intentionTypeId);
+    return sum + (val ?? 0);
+  }, 0);
+
   // ---- Handlers ----
 
   const nextStep = () => {
@@ -173,18 +189,15 @@ export default function IntentionFormPage() {
         setError("Informe seu nome completo (nome e sobrenome).");
         return;
       }
-    }
-    if (step === 1) {
       if (!massDate) { setError("Selecione uma data."); return; }
       if (!massTime) { setError("Selecione um horário."); return; }
     }
-    if (step === 2) {
+    if (step === 1) {
       const invalid = intentions.some((i) => !i.group || !i.intentionTypeId);
       if (invalid) {
         setError("Preencha o grupo e o tipo de cada intenção.");
         return;
       }
-      // Validate required fields per type
       for (let idx = 0; idx < intentions.length; idx++) {
         const intent = intentions[idx];
         const type = getTypeForIntention(intent);
@@ -202,19 +215,6 @@ export default function IntentionFormPage() {
           return;
         }
       }
-    }
-    // When moving to the Oferta step, pre-populate suggested values
-    if (step === 2) {
-      setIntentions((prev) =>
-        prev.map((intent) => {
-          if (intent.offeredValue) return intent; // keep user-modified value
-          const suggested = resolveSuggestedValue(intent.group, intent.intentionTypeId);
-          return {
-            ...intent,
-            offeredValue: suggested !== null ? suggested.toFixed(2) : "",
-          };
-        })
-      );
     }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
@@ -278,7 +278,6 @@ export default function IntentionFormPage() {
           familyNames: i.familyNames || undefined,
           complement: i.complement || undefined,
           notes: i.notes || undefined,
-          offeredValue: i.offeredValue ? parseFloat(i.offeredValue) : undefined,
         })),
       };
 
@@ -300,6 +299,13 @@ export default function IntentionFormPage() {
   return (
     <main className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-2xl mx-auto px-4">
+        {/* Parish header */}
+        {parish && (
+          <h2 className="text-center text-lg font-semibold text-gray-800 mb-6">
+            {parish.parishName}
+          </h2>
+        )}
+
         {/* Progress bar */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
@@ -336,68 +342,67 @@ export default function IntentionFormPage() {
           </div>
         )}
 
-        {/* Step 1: Identification */}
+        {/* Step 1: Dados e Horário */}
         {step === 0 && (
-          <Card title="Identificação">
-            <div className="space-y-4">
-              <PhoneInput label="Telefone" value={phone} onChange={setPhone} />
-              <Input
-                label="Nome completo"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Seu nome completo"
-              />
-            </div>
-          </Card>
+          <div className="space-y-6">
+            <Card title="Identificação">
+              <div className="space-y-4">
+                <Input
+                  label="Nome completo"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Seu nome completo"
+                />
+                <PhoneInput label="Telefone" value={phone} onChange={setPhone} />
+              </div>
+            </Card>
+
+            <Card title="Data e Horário">
+              <div className="space-y-4">
+                <Input
+                  label="Data da Missa"
+                  type="date"
+                  value={massDate}
+                  onChange={(e) => setMassDate(e.target.value)}
+                  min={new Date().toISOString().split("T")[0]}
+                />
+                {massDate && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Horário</label>
+                    {loadingMasses ? (
+                      <p className="text-sm text-gray-500">Carregando horários...</p>
+                    ) : massOptions.length === 0 ? (
+                      <p className="text-sm text-gray-500">Nenhuma missa disponível nesta data.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {massOptions.map((opt) => (
+                          <button
+                            key={opt.time}
+                            type="button"
+                            onClick={() => setMassTime(opt.time)}
+                            className={`px-4 py-3 rounded-lg border text-sm font-medium transition-colors ${
+                              massTime === opt.time
+                                ? "bg-primary-600 text-white border-primary-600"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-primary-300 hover:bg-primary-50"
+                            }`}
+                          >
+                            {opt.time}
+                            {opt.title && (
+                              <span className="block text-xs opacity-75 mt-0.5">{opt.title}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Card>
+          </div>
         )}
 
-        {/* Step 2: Date & Time */}
+        {/* Step 2: Intenções */}
         {step === 1 && (
-          <Card title="Data e Horário">
-            <div className="space-y-4">
-              <Input
-                label="Data da Missa"
-                type="date"
-                value={massDate}
-                onChange={(e) => setMassDate(e.target.value)}
-                min={new Date().toISOString().split("T")[0]}
-              />
-              {massDate && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Horário</label>
-                  {loadingMasses ? (
-                    <p className="text-sm text-gray-500">Carregando horários...</p>
-                  ) : massOptions.length === 0 ? (
-                    <p className="text-sm text-gray-500">Nenhuma missa disponível nesta data.</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {massOptions.map((opt) => (
-                        <button
-                          key={opt.time}
-                          type="button"
-                          onClick={() => setMassTime(opt.time)}
-                          className={`px-4 py-3 rounded-lg border text-sm font-medium transition-colors ${
-                            massTime === opt.time
-                              ? "bg-primary-600 text-white border-primary-600"
-                              : "bg-white text-gray-700 border-gray-200 hover:border-primary-300 hover:bg-primary-50"
-                          }`}
-                        >
-                          {opt.time}
-                          {opt.title && (
-                            <span className="block text-xs opacity-75 mt-0.5">{opt.title}</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </Card>
-        )}
-
-        {/* Step 3: Intentions */}
-        {step === 2 && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
@@ -511,142 +516,142 @@ export default function IntentionFormPage() {
           </div>
         )}
 
-        {/* Step 4: Oferta */}
-        {step === 3 && (
-          <Card title="Oferta Sugerida">
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                Com base no tipo de cada intenção, segue a oferta sugerida pela paróquia. Você pode alterar os valores se desejar.
-              </p>
+        {/* Step 3: Confirmação */}
+        {step === 2 && (
+          <div className="space-y-6">
+            <Card title="Confirmação">
+              <div className="space-y-4">
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Nome:</span>
+                    <span className="font-medium text-gray-900">{fullName}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Telefone:</span>
+                    <span className="font-medium text-gray-900">{phone}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Data:</span>
+                    <span className="font-medium text-gray-900">
+                      {new Date(massDate + "T12:00:00").toLocaleDateString("pt-BR")}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Horário:</span>
+                    <span className="font-medium text-gray-900">{massTime}</span>
+                  </div>
+                </div>
 
-              <div className="space-y-3">
-                {intentions.map((intention, index) => {
-                  const type = getTypeForIntention(intention);
-                  const suggested = resolveSuggestedValue(intention.group, intention.intentionTypeId);
-                  return (
-                    <div key={index} className="bg-gray-50 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <span className="text-sm font-medium text-gray-900">
-                            {index + 1}. {type?.name || "—"}
-                          </span>
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-700 mb-2">
+                    Intenções ({intentions.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {intentions.map((intention, index) => {
+                      const groupLabel = GROUP_OPTIONS.find((g) => g.value === intention.group)?.label || intention.group;
+                      const type = getTypeForIntention(intention);
+                      const suggested = resolveSuggestedValue(intention.group, intention.intentionTypeId);
+                      return (
+                        <div key={index} className="bg-gray-50 rounded-lg p-3 text-sm">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900">
+                                {index + 1}. {type?.name || "—"}
+                              </span>
+                              <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
+                                {groupLabel}
+                              </span>
+                            </div>
+                            {suggested !== null && (
+                              <span className="text-xs text-gray-500">
+                                R$ {suggested.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
                           {intention.deceasedName && (
-                            <span className="text-xs text-gray-500 ml-2">({intention.deceasedName})</span>
+                            <p className="text-gray-600">Falecido(a): {intention.deceasedName}</p>
+                          )}
+                          {intention.familyNames && (
+                            <p className="text-gray-600">Famílias: {intention.familyNames}</p>
+                          )}
+                          {intention.complement && (
+                            <p className="text-gray-600">Complemento: {intention.complement}</p>
+                          )}
+                          {intention.notes && (
+                            <p className="text-gray-600">Obs: {intention.notes}</p>
                           )}
                         </div>
-                        {suggested !== null && (
-                          <span className="text-xs text-gray-500">
-                            Sugerido: R$ {suggested.toFixed(2)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">R$</span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={intention.offeredValue}
-                          onChange={(e) => updateIntention(index, "offeredValue", e.target.value)}
-                          className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                          placeholder={suggested !== null ? suggested.toFixed(2) : "0.00"}
-                        />
-                      </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Oferta Sugerida */}
+            {totalSuggested > 0 && (
+              <Card>
+                <div className="text-center space-y-4">
+                  <div>
+                    <p className="text-sm text-gray-600 mb-1">Oferta Sugerida</p>
+                    <p className="text-3xl font-bold text-primary-700">
+                      R$ {totalSuggested.toFixed(2)}
+                    </p>
+                  </div>
+
+                  {/* PIX QR Code */}
+                  {parish?.pixQrCodeUrl && (
+                    <div className="border-t pt-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">Pague via PIX</p>
+                      <img
+                        src={parish.pixQrCodeUrl}
+                        alt="QR Code PIX"
+                        className="w-48 h-48 mx-auto border rounded-lg"
+                      />
+                      {parish.pixKey && (
+                        <p className="text-xs text-gray-500 mt-2">
+                          Chave PIX: <span className="font-mono">{parish.pixKey}</span>
+                        </p>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                  )}
 
-              {/* Total */}
-              <div className="border-t pt-3 mt-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-semibold text-gray-700">Total:</span>
-                  <span className="text-lg font-bold text-primary-700">
-                    R$ {intentions.reduce((sum, i) => sum + (parseFloat(i.offeredValue) || 0), 0).toFixed(2)}
-                  </span>
+                  {/* PIX key only (no QR code) */}
+                  {!parish?.pixQrCodeUrl && parish?.pixKey && (
+                    <div className="border-t pt-4">
+                      <p className="text-sm font-medium text-gray-700 mb-1">Pague via PIX</p>
+                      <p className="text-sm text-gray-600">
+                        Chave: <span className="font-mono font-medium">{parish.pixKey}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
-          </Card>
-        )}
+              </Card>
+            )}
 
-        {/* Step 5: Confirmation */}
-        {step === 4 && (
-          <Card title="Confirmação">
-            <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Nome:</span>
-                  <span className="font-medium text-gray-900">{fullName}</span>
+            {/* PIX info when no emolument configured */}
+            {totalSuggested === 0 && (parish?.pixQrCodeUrl || parish?.pixKey) && (
+              <Card>
+                <div className="text-center space-y-3">
+                  {parish.pixQrCodeUrl && (
+                    <>
+                      <p className="text-sm font-medium text-gray-700">Oferta via PIX</p>
+                      <img
+                        src={parish.pixQrCodeUrl}
+                        alt="QR Code PIX"
+                        className="w-48 h-48 mx-auto border rounded-lg"
+                      />
+                    </>
+                  )}
+                  {parish.pixKey && (
+                    <p className="text-xs text-gray-500">
+                      Chave PIX: <span className="font-mono">{parish.pixKey}</span>
+                    </p>
+                  )}
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Telefone:</span>
-                  <span className="font-medium text-gray-900">{phone}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Data:</span>
-                  <span className="font-medium text-gray-900">
-                    {new Date(massDate + "T12:00:00").toLocaleDateString("pt-BR")}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Horário:</span>
-                  <span className="font-medium text-gray-900">{massTime}</span>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                  Intenções ({intentions.length})
-                </h4>
-                <div className="space-y-2">
-                  {intentions.map((intention, index) => {
-                    const groupLabel = GROUP_OPTIONS.find((g) => g.value === intention.group)?.label || intention.group;
-                    const type = getTypeForIntention(intention);
-                    return (
-                      <div key={index} className="bg-gray-50 rounded-lg p-3 text-sm">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-gray-900">
-                            {index + 1}. {type?.name || "—"}
-                          </span>
-                          <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
-                            {groupLabel}
-                          </span>
-                        </div>
-                        {intention.deceasedName && (
-                          <p className="text-gray-600">Falecido(a): {intention.deceasedName}</p>
-                        )}
-                        {intention.familyNames && (
-                          <p className="text-gray-600">Famílias: {intention.familyNames}</p>
-                        )}
-                        {intention.complement && (
-                          <p className="text-gray-600">Complemento: {intention.complement}</p>
-                        )}
-                        {intention.notes && (
-                          <p className="text-gray-600">Obs: {intention.notes}</p>
-                        )}
-                        {intention.offeredValue && (
-                          <p className="text-gray-600 font-medium">
-                            Oferta: R$ {parseFloat(intention.offeredValue).toFixed(2)}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Total */}
-              <div className="border-t pt-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-semibold text-gray-700">Total da Oferta:</span>
-                  <span className="text-lg font-bold text-primary-700">
-                    R$ {intentions.reduce((sum, i) => sum + (parseFloat(i.offeredValue) || 0), 0).toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </Card>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* Navigation */}

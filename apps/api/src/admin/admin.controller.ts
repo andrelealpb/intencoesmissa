@@ -80,6 +80,20 @@ export class AdminController {
     return this.adminService.deleteLogo(getParishId(req));
   }
 
+  @Post("parish/pix-qrcode")
+  @UseInterceptors(FileInterceptor("file"))
+  uploadPixQrCode(
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.adminService.uploadPixQrCode(getParishId(req), file);
+  }
+
+  @Delete("parish/pix-qrcode")
+  deletePixQrCode(@Req() req: AuthenticatedRequest) {
+    return this.adminService.deletePixQrCode(getParishId(req));
+  }
+
   // ── Parish Settings ────────────────────────────────────
 
   @Get("settings")

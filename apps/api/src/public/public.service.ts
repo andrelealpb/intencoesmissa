@@ -21,6 +21,8 @@ export class PublicService {
         addressJson: true,
         phonesJson: true,
         logoUrl: true,
+        pixKey: true,
+        pixQrCodeUrl: true,
       },
     });
 

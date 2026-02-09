@@ -43,6 +43,7 @@ export class AdminService {
         parishName: data.parishName,
         pastorName: data.pastorName,
         dispatchEmails: data.dispatchEmails,
+        pixKey: data.pixKey,
       },
     });
   }
@@ -82,6 +83,43 @@ export class AdminService {
     return this.prisma.parish.update({
       where: { id: parishId },
       data: { logoStorageKey: null, logoUrl: null },
+    });
+  }
+
+  async uploadPixQrCode(
+    parishId: string,
+    file: Express.Multer.File,
+  ) {
+    const key = `parishes/${parishId}/pix-qrcode-${Date.now()}.${file.originalname.split(".").pop()}`;
+    await this.storage.upload(key, file.buffer, file.mimetype);
+
+    const parish = await this.prisma.parish.findUnique({
+      where: { id: parishId },
+      select: { pixQrCodeStorageKey: true },
+    });
+    if (parish?.pixQrCodeStorageKey) {
+      await this.storage.delete(parish.pixQrCodeStorageKey).catch(() => {});
+    }
+
+    const pixQrCodeUrl = await this.storage.getSignedUrl(key);
+
+    return this.prisma.parish.update({
+      where: { id: parishId },
+      data: { pixQrCodeStorageKey: key, pixQrCodeUrl },
+    });
+  }
+
+  async deletePixQrCode(parishId: string) {
+    const parish = await this.prisma.parish.findUnique({
+      where: { id: parishId },
+      select: { pixQrCodeStorageKey: true },
+    });
+    if (parish?.pixQrCodeStorageKey) {
+      await this.storage.delete(parish.pixQrCodeStorageKey).catch(() => {});
+    }
+    return this.prisma.parish.update({
+      where: { id: parishId },
+      data: { pixQrCodeStorageKey: null, pixQrCodeUrl: null },
     });
   }
 

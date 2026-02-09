@@ -13,6 +13,8 @@ interface Parish {
   pastorName?: string;
   dispatchEmails: string[];
   logoUrl?: string;
+  pixKey?: string;
+  pixQrCodeUrl?: string;
 }
 
 export default function ParishPage() {
@@ -43,6 +45,7 @@ export default function ParishPage() {
           cnpj: parish.cnpj,
           pastorName: parish.pastorName,
           dispatchEmails: parish.dispatchEmails,
+          pixKey: parish.pixKey,
         }),
       });
       alert('Dados salvos com sucesso!');
@@ -94,6 +97,39 @@ export default function ParishPage() {
     try {
       await apiAuthFetch('/admin/parish/logo', session.accessToken as string, { method: 'DELETE' });
       setParish((prev) => (prev ? { ...prev, logoUrl: undefined } : prev));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePixQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !session?.accessToken) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/admin/parish/pix-qrcode`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.accessToken}` },
+          body: formData,
+        },
+      );
+      if (res.ok) {
+        const updated = await res.json();
+        setParish((prev) => (prev ? { ...prev, pixQrCodeUrl: updated.pixQrCodeUrl } : prev));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handlePixQrDelete = async () => {
+    if (!session?.accessToken) return;
+    try {
+      await apiAuthFetch('/admin/parish/pix-qrcode', session.accessToken as string, { method: 'DELETE' });
+      setParish((prev) => (prev ? { ...prev, pixQrCodeUrl: undefined } : prev));
     } catch (err) {
       console.error(err);
     }
@@ -180,6 +216,36 @@ export default function ParishPage() {
             <button onClick={addEmail} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">
               Adicionar
             </button>
+          </div>
+        </div>
+
+        {/* PIX */}
+        <div className="border-t pt-4 mt-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">Dados PIX</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Chave PIX</label>
+              <input
+                className="w-full border rounded-md px-3 py-2 text-sm"
+                value={parish.pixKey ?? ''}
+                onChange={(e) => setParish({ ...parish, pixKey: e.target.value })}
+                placeholder="E-mail, CPF/CNPJ, telefone ou chave aleatória"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">QR Code PIX</label>
+              {parish.pixQrCodeUrl ? (
+                <div className="flex items-center gap-4">
+                  <img src={parish.pixQrCodeUrl} alt="QR Code PIX" className="w-32 h-32 object-contain border rounded" />
+                  <button onClick={handlePixQrDelete} className="text-sm text-red-600 hover:underline">
+                    Remover
+                  </button>
+                </div>
+              ) : (
+                <input type="file" accept="image/*" onChange={handlePixQrUpload} className="text-sm" />
+              )}
+              <p className="text-xs text-gray-500 mt-1">Envie a imagem do QR Code gerado pelo seu banco.</p>
+            </div>
           </div>
         </div>
 

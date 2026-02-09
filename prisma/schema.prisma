@@ -55,6 +55,9 @@ model Parish {
   dispatchEmails  String[] @map("dispatch_emails")
   logoUrl         String?  @map("logo_url")
   logoStorageKey  String?  @map("logo_storage_key")
+  pixKey          String?  @map("pix_key")
+  pixQrCodeUrl    String?  @map("pix_qr_code_url")
+  pixQrCodeStorageKey String? @map("pix_qr_code_storage_key")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

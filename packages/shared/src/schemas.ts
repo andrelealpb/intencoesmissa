@@ -124,6 +124,7 @@ export const parishProfileSchema = z.object({
   parishName: z.string().min(1, "Nome da paroquia e obrigatorio"),
   pastorName: z.string().nullish(),
   dispatchEmails: z.array(z.string().email("E-mail invalido")),
+  pixKey: z.string().nullish(),
 });
 
 // ---------------------------------------------------------------------------
