@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
+  Logger,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "./storage.service";
@@ -17,6 +19,8 @@ import type {
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
@@ -475,65 +479,83 @@ export class AdminService {
       }
     }
 
-    // Generate PDF
-    const PDFDocument = (await import("pdfkit")).default;
-    const { PassThrough } = await import("stream");
+    let pdfBuffer: Buffer;
+    try {
+      // Generate PDF
+      const PDFDocument = (await import("pdfkit")).default;
+      const { PassThrough } = await import("stream");
 
-    const doc = new PDFDocument({ size: "A4", margin: 50 });
-    const passThrough = new PassThrough();
-    const pdfChunks: Buffer[] = [];
-    passThrough.on("data", (chunk: Buffer) => pdfChunks.push(chunk));
-    doc.pipe(passThrough);
+      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      const passThrough = new PassThrough();
+      const pdfChunks: Buffer[] = [];
+      passThrough.on("data", (chunk: Buffer) => pdfChunks.push(chunk));
+      doc.pipe(passThrough);
 
-    const formattedDate = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
-    doc.font("Helvetica-Bold").fontSize(14);
-    doc.text(parish.parishName, { align: "center" });
-    doc.moveDown(0.5);
-    doc.font("Helvetica").fontSize(11);
-    doc.text(`Data: ${formattedDate}  Horario: ${massTime}`, { align: "center" });
-    doc.moveDown(0.3);
-    doc.font("Helvetica-Bold").fontSize(12);
-    doc.text("Intencoes da Santa Missa", { align: "center" });
-    doc.moveDown(0.5);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(1).stroke();
-    doc.moveDown(0.5);
-
-    const GROUP_LABELS: Record<string, string> = {
-      SUFRAGIO: "Sufragio",
-      SUPLICAS: "Suplicas",
-      ACAO_DE_GRACAS: "Acao de Gracas",
-    };
-
-    for (const group of ["SUFRAGIO", "SUPLICAS", "ACAO_DE_GRACAS"]) {
-      const items = grouped[group];
-      if (items.length === 0) continue;
-      doc.font("Helvetica-Bold").fontSize(11);
-      doc.text(`${GROUP_LABELS[group]} (${items.length})`);
-      doc.moveDown(0.3);
-      doc.font("Helvetica").fontSize(10);
-      for (const item of items) {
-        const parts = [item.intentionType.name];
-        if (item.deceasedName) parts.push(item.deceasedName);
-        if (item.familyNames) parts.push(item.familyNames);
-        if (item.complement) parts.push(item.complement);
-        doc.text(`  • ${parts.join(" - ")}`, { width: 475 });
-      }
+      const formattedDate = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
+      doc.font("Helvetica-Bold").fontSize(14);
+      doc.text(parish.parishName, { align: "center" });
       doc.moveDown(0.5);
+      doc.font("Helvetica").fontSize(11);
+      doc.text(`Data: ${formattedDate}  Horario: ${massTime}`, { align: "center" });
+      doc.moveDown(0.3);
+      doc.font("Helvetica-Bold").fontSize(12);
+      doc.text("Intencoes da Santa Missa", { align: "center" });
+      doc.moveDown(0.5);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(1).stroke();
+      doc.moveDown(0.5);
+
+      const GROUP_LABELS: Record<string, string> = {
+        SUFRAGIO: "Sufragio",
+        SUPLICAS: "Suplicas",
+        ACAO_DE_GRACAS: "Acao de Gracas",
+      };
+
+      for (const group of ["SUFRAGIO", "SUPLICAS", "ACAO_DE_GRACAS"]) {
+        const items = grouped[group];
+        if (items.length === 0) continue;
+        doc.font("Helvetica-Bold").fontSize(11);
+        doc.text(`${GROUP_LABELS[group]} (${items.length})`);
+        doc.moveDown(0.3);
+        doc.font("Helvetica").fontSize(10);
+        for (const item of items) {
+          const parts = [item.intentionType.name];
+          if (item.deceasedName) parts.push(item.deceasedName);
+          if (item.familyNames) parts.push(item.familyNames);
+          if (item.complement) parts.push(item.complement);
+          doc.text(`  • ${parts.join(" - ")}`, { width: 475 });
+        }
+        doc.moveDown(0.5);
+      }
+
+      doc.end();
+      pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+        passThrough.on("end", () => resolve(Buffer.concat(pdfChunks)));
+        passThrough.on("error", reject);
+      });
+    } catch (err) {
+      this.logger.error("Erro ao gerar PDF", err);
+      throw new BadRequestException("Erro ao gerar PDF do despacho.");
     }
 
-    doc.end();
-    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-      passThrough.on("end", () => resolve(Buffer.concat(pdfChunks)));
-      passThrough.on("error", reject);
-    });
-
-    // Upload and send
+    // Upload to S3
     const storageKey = `dispatches/${parishId}/${todayStr.replace(/-/g, "")}/${massTime.replace(":", "")}.pdf`;
-    await this.storage.upload(storageKey, pdfBuffer, "application/pdf");
+    try {
+      await this.storage.upload(storageKey, pdfBuffer, "application/pdf");
+    } catch (err) {
+      this.logger.error("Erro ao enviar PDF para S3", err);
+      throw new BadRequestException("Erro ao salvar PDF no armazenamento. Verifique as configuracoes de S3.");
+    }
 
+    // Send email
+    const formattedDate2 = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
     const pdfFilename = `intencoes_${todayStr.replace(/-/g, "")}_${massTime.replace(":", "")}.pdf`;
-    const subject = `Intencoes da Missa - ${parish.parishName} - ${formattedDate} ${massTime}`;
-    await this.email.sendDispatchEmail(parish.dispatchEmails, subject, pdfBuffer, pdfFilename);
+    const subject = `Intencoes da Missa - ${parish.parishName} - ${formattedDate2} ${massTime}`;
+    try {
+      await this.email.sendDispatchEmail(parish.dispatchEmails, subject, pdfBuffer, pdfFilename);
+    } catch (err) {
+      this.logger.error("Erro ao enviar e-mail de despacho", err);
+      // Continue even if email fails — save the batch as SENT so it's not dispatched again
+    }
 
     const batch = await this.prisma.dispatchBatch.create({
       data: {
