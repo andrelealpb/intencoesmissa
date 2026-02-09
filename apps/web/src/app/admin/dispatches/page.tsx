@@ -15,27 +15,66 @@ interface Dispatch {
   _count: { intentions: number };
 }
 
+interface NextMass {
+  massDate: string;
+  massTime: string;
+  title?: string | null;
+  pendingIntentions: number;
+}
+
 export default function DispatchesPage() {
   const { data: session } = useSession();
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [nextMass, setNextMass] = useState<NextMass | null>(null);
+  const [loadingNext, setLoadingNext] = useState(false);
   const token = session?.accessToken as string;
 
-  useEffect(() => {
+  const loadDispatches = () => {
     if (!token) return;
     apiAuthFetch('/admin/dispatches', token)
       .then(setDispatches)
       .catch(console.error)
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadDispatches();
   }, [token]);
 
-  const handleRunNow = async () => {
+  const handleDispatchClick = async () => {
     if (!token) return;
+    setLoadingNext(true);
+    try {
+      const data = await apiAuthFetch('/admin/dispatches/next-mass', token);
+      if (!data) {
+        alert('Nenhuma missa pendente para hoje.');
+        return;
+      }
+      setNextMass(data);
+      setShowConfirm(true);
+    } catch (e: any) {
+      alert('Erro: ' + e.message);
+    } finally {
+      setLoadingNext(false);
+    }
+  };
+
+  const handleConfirmDispatch = async () => {
+    if (!token || !nextMass) return;
     setTriggering(true);
     try {
-      await apiAuthFetch('/admin/dispatches/run-now', token, { method: 'POST' });
-      alert('Disparo manual solicitado!');
+      const result = await apiAuthFetch('/admin/dispatches/run-now', token, {
+        method: 'POST',
+        body: JSON.stringify({ massTime: nextMass.massTime }),
+      });
+      alert(result.message);
+      setShowConfirm(false);
+      setNextMass(null);
+      setLoading(true);
+      loadDispatches();
     } catch (e: any) {
       alert('Erro: ' + e.message);
     } finally {
@@ -57,28 +96,70 @@ export default function DispatchesPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">Histórico de Disparos</h1>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
+        <h1 className="text-2xl font-bold text-gray-800">Historico de Disparos</h1>
         <button
-          onClick={handleRunNow}
-          disabled={triggering}
+          onClick={handleDispatchClick}
+          disabled={loadingNext}
           className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700 disabled:opacity-50"
         >
-          {triggering ? 'Disparando...' : 'Disparar Agora'}
+          {loadingNext ? 'Verificando...' : 'Disparar Agora'}
         </button>
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirm && nextMass && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <h2 className="text-lg font-bold text-gray-800 mb-3">Confirmar Disparo Manual</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Deseja encerrar e disparar as intencoes da proxima missa?
+            </p>
+            <div className="bg-gray-50 rounded-lg p-4 mb-4">
+              <p className="text-sm">
+                <strong>Missa:</strong> {nextMass.massTime}
+                {nextMass.title && <span className="text-gray-500"> ({nextMass.title})</span>}
+              </p>
+              <p className="text-sm">
+                <strong>Data:</strong> {nextMass.massDate.split('-').reverse().join('/')}
+              </p>
+              <p className="text-sm">
+                <strong>Intencoes pendentes:</strong> {nextMass.pendingIntentions}
+              </p>
+            </div>
+            <p className="text-xs text-amber-600 mb-4">
+              Apos o disparo, nao sera mais possivel adicionar intencoes para esta missa.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => { setShowConfirm(false); setNextMass(null); }}
+                className="px-4 py-2 text-sm border rounded-md hover:bg-gray-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDispatch}
+                disabled={triggering}
+                className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+              >
+                {triggering ? 'Disparando...' : 'Confirmar Disparo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
               <th className="text-left p-3">Data</th>
-              <th className="text-left p-3">Horário</th>
+              <th className="text-left p-3">Horario</th>
               <th className="text-left p-3">Escopo</th>
               <th className="text-center p-3">Status</th>
-              <th className="text-center p-3">Intenções</th>
+              <th className="text-center p-3">Intencoes</th>
               <th className="text-left p-3">Enviado em</th>
-              <th className="text-right p-3">Ações</th>
+              <th className="text-right p-3">Acoes</th>
             </tr>
           </thead>
           <tbody>
@@ -95,7 +176,7 @@ export default function DispatchesPage() {
                 <td className="p-3 text-center">{d._count.intentions}</td>
                 <td className="p-3 text-gray-500">{new Date(d.sentAt).toLocaleString('pt-BR')}</td>
                 <td className="p-3 text-right">
-                  {d.status === 'SENT' && (
+                  {d.status === 'SENT' && d._count.intentions > 0 && (
                     <button onClick={() => handleDownload(d.id)} className="text-blue-600 text-xs hover:underline">
                       Baixar PDF
                     </button>

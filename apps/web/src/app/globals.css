@@ -24,6 +24,13 @@
   }
 }
 
+/* Prevent iOS zoom on input focus — inputs must be >= 16px */
+@media screen and (max-width: 767px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 @layer components {
   .container-page {
     @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8;

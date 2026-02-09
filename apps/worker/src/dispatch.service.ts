@@ -17,13 +17,18 @@ export class DispatchService {
   async checkAndDispatch(): Promise<void> {
     const now = new Date();
     const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-    const currentHHmm = spNow.toTimeString().slice(0, 5); // "HH:mm"
+    const currentMinutes = spNow.getHours() * 60 + spNow.getMinutes();
+    const todayStr = this.formatDateYYYYMMDD(spNow);
+    const todayDate = new Date(todayStr + 'T00:00:00.000Z');
+    const weekday = spNow.getDay();
 
-    console.log(`[Dispatch] Current time in Sao Paulo: ${currentHHmm}`);
+    console.log(`[Dispatch] Current time in Sao Paulo: ${spNow.toTimeString().slice(0, 5)}`);
 
     const parishes = await this.prisma.parish.findMany({
       include: {
         settings: true,
+        massSchedules: { where: { isActive: true } },
+        massExceptions: { where: { date: todayDate, isActive: true } },
       },
     });
 
@@ -31,128 +36,65 @@ export class DispatchService {
     let totalFailed = 0;
 
     for (const parish of parishes) {
-      if (!parish.settings) {
-        continue;
+      if (!parish.settings) continue;
+
+      const minutesBefore = parish.settings.dispatchMinutesBefore ?? 30;
+
+      // Determine today's masses for this parish
+      let massTimes: string[];
+      if (parish.massExceptions.length > 0) {
+        massTimes = parish.massExceptions.map((e: any) => e.time);
+      } else {
+        massTimes = parish.massSchedules
+          .filter((s: any) => s.weekday === weekday)
+          .map((s: any) => s.time);
       }
 
-      const dispatchTime = parish.settings.dispatchTime;
-      if (currentHHmm !== dispatchTime) {
-        continue;
-      }
+      // Check each mass: dispatch if current time = massTime - minutesBefore
+      for (const massTime of massTimes) {
+        const [h, m] = massTime.split(':').map(Number);
+        const massMinutes = h * 60 + m;
+        const dispatchAt = massMinutes - minutesBefore;
 
-      console.log(`[Dispatch] Processing parish: ${parish.parishName} (${parish.id})`);
+        if (currentMinutes !== dispatchAt) continue;
 
-      try {
-        const result = await this.processParish(parish, spNow);
-        totalBatchesCreated += result.created;
-        totalFailed += result.failed;
-      } catch (error) {
-        console.error(`[Dispatch] Error processing parish ${parish.id}:`, error);
-        totalFailed++;
+        console.log(`[Dispatch] Time to dispatch for ${parish.parishName} mass at ${massTime}`);
+
+        try {
+          const result = await this.processParishMass(parish, todayDate, massTime);
+          if (result.success) totalBatchesCreated++;
+          else totalFailed++;
+        } catch (error) {
+          console.error(`[Dispatch] Error processing parish ${parish.id} mass ${massTime}:`, error);
+          totalFailed++;
+        }
       }
     }
 
     console.log(`[Dispatch] Completed. Batches created: ${totalBatchesCreated}, Failed: ${totalFailed}`);
   }
 
-  private async processParish(
+  private async processParishMass(
     parish: any,
-    spNow: Date,
-  ): Promise<{ created: number; failed: number }> {
-    const settings = parish.settings;
-    const todayStr = this.formatDateYYYYMMDD(spNow);
-    const todayDate = new Date(todayStr + 'T00:00:00.000Z');
+    massDate: Date,
+    massTime: string,
+  ): Promise<{ success: boolean }> {
+    // Check if already dispatched
+    const existingBatch = await this.prisma.dispatchBatch.findFirst({
+      where: {
+        parishId: parish.id,
+        massDate,
+        massTime,
+        status: DispatchStatus.SENT,
+      },
+    });
 
-    let created = 0;
-    let failed = 0;
-
-    if (settings.dispatchScope === DispatchScope.PER_MASS) {
-      // Get all distinct mass times for today that have pending intentions
-      const pendingIntentions = await this.prisma.requestIntention.findMany({
-        where: {
-          dispatchedAt: null,
-          request: {
-            parishId: parish.id,
-            status: RequestStatus.SUBMITTED,
-            massDate: todayDate,
-          },
-        },
-        include: {
-          request: true,
-        },
-      });
-
-      // Group by mass time
-      const massTimesSet = new Set<string>();
-      for (const intention of pendingIntentions) {
-        massTimesSet.add(intention.request.massTime);
-      }
-
-      for (const massTime of massTimesSet) {
-        // Check if a SENT batch already exists for this parish+date+time
-        const existingBatch = await this.prisma.dispatchBatch.findFirst({
-          where: {
-            parishId: parish.id,
-            massDate: todayDate,
-            massTime: massTime,
-            status: DispatchStatus.SENT,
-          },
-        });
-
-        if (existingBatch) {
-          console.log(`[Dispatch] Batch already exists for ${parish.parishName} ${todayStr} ${massTime}`);
-          continue;
-        }
-
-        const result = await this.createBatch(parish, todayDate, massTime, DispatchScope.PER_MASS);
-        if (result.success) {
-          created++;
-        } else {
-          failed++;
-        }
-      }
-    } else {
-      // PER_DAY: check if a SENT batch already exists for this parish+date (massTime null)
-      const existingBatch = await this.prisma.dispatchBatch.findFirst({
-        where: {
-          parishId: parish.id,
-          massDate: todayDate,
-          massTime: null,
-          status: DispatchStatus.SENT,
-        },
-      });
-
-      if (existingBatch) {
-        console.log(`[Dispatch] Daily batch already exists for ${parish.parishName} ${todayStr}`);
-        return { created, failed };
-      }
-
-      // Check if there are any pending intentions for today
-      const pendingCount = await this.prisma.requestIntention.count({
-        where: {
-          dispatchedAt: null,
-          request: {
-            parishId: parish.id,
-            status: RequestStatus.SUBMITTED,
-            massDate: todayDate,
-          },
-        },
-      });
-
-      if (pendingCount === 0) {
-        console.log(`[Dispatch] No pending intentions for ${parish.parishName} ${todayStr}`);
-        return { created, failed };
-      }
-
-      const result = await this.createBatch(parish, todayDate, null, DispatchScope.PER_DAY);
-      if (result.success) {
-        created++;
-      } else {
-        failed++;
-      }
+    if (existingBatch) {
+      console.log(`[Dispatch] Batch already exists for ${parish.parishName} ${massTime}`);
+      return { success: true };
     }
 
-    return { created, failed };
+    return this.createBatch(parish, massDate, massTime, DispatchScope.PER_MASS);
   }
 
   private async createBatch(

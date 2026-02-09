@@ -333,15 +333,218 @@ export class AdminService {
     return { url };
   }
 
-  async runDispatchNow(parishId: string) {
-    // This is a manual trigger; in a full system, the worker would handle
-    // the heavy lifting. Here we just mark that a manual dispatch was requested.
-    // The worker service polls for pending dispatches.
-    // For now, return a placeholder response.
+  async getNextMass(parishId: string) {
+    const now = new Date();
+    const spNow = new Date(
+      now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }),
+    );
+    const todayStr = `${spNow.getFullYear()}-${String(spNow.getMonth() + 1).padStart(2, "0")}-${String(spNow.getDate()).padStart(2, "0")}`;
+    const todayDate = new Date(todayStr + "T00:00:00.000Z");
+    const weekday = spNow.getDay();
+
+    // Check exceptions for today
+    const exceptions = await this.prisma.massException.findMany({
+      where: { parishId, date: todayDate, isActive: true },
+      orderBy: { time: "asc" },
+    });
+
+    let massTimes: { time: string; title?: string | null }[] = [];
+    if (exceptions.length > 0) {
+      massTimes = exceptions.map((e) => ({ time: e.time, title: e.title }));
+    } else {
+      const schedules = await this.prisma.massSchedule.findMany({
+        where: { parishId, weekday, isActive: true },
+        orderBy: { time: "asc" },
+      });
+      massTimes = schedules.map((s) => ({ time: s.time, title: null }));
+    }
+
+    // Find the next mass that hasn't been dispatched yet
+    for (const mass of massTimes) {
+      const existingBatch = await this.prisma.dispatchBatch.findFirst({
+        where: {
+          parishId,
+          massDate: todayDate,
+          massTime: mass.time,
+          status: "SENT",
+        },
+      });
+      if (!existingBatch) {
+        const pendingCount = await this.prisma.requestIntention.count({
+          where: {
+            dispatchedAt: null,
+            request: {
+              parishId,
+              status: "SUBMITTED",
+              massDate: todayDate,
+              massTime: mass.time,
+            },
+          },
+        });
+        return {
+          massDate: todayStr,
+          massTime: mass.time,
+          title: mass.title,
+          pendingIntentions: pendingCount,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  async runDispatchNow(parishId: string, massTime: string) {
+    const now = new Date();
+    const spNow = new Date(
+      now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }),
+    );
+    const todayStr = `${spNow.getFullYear()}-${String(spNow.getMonth() + 1).padStart(2, "0")}-${String(spNow.getDate()).padStart(2, "0")}`;
+    const todayDate = new Date(todayStr + "T00:00:00.000Z");
+
+    const pendingIntentions = await this.prisma.requestIntention.findMany({
+      where: {
+        dispatchedAt: null,
+        request: {
+          parishId,
+          status: "SUBMITTED",
+          massDate: todayDate,
+          massTime,
+        },
+      },
+      include: { request: true, intentionType: true },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (pendingIntentions.length === 0) {
+      // Even with 0 intentions, we create a SENT batch to close the mass
+      const parish = await this.prisma.parish.findUnique({ where: { id: parishId } });
+      if (!parish) throw new NotFoundException("Paroquia nao encontrada");
+
+      await this.prisma.dispatchBatch.create({
+        data: {
+          parishId,
+          scope: "PER_MASS",
+          massDate: todayDate,
+          massTime,
+          pdfStorageKey: "",
+          sentToEmails: parish.dispatchEmails || [],
+          sentAt: new Date(),
+          status: "SENT",
+        },
+      });
+
+      return {
+        message: "Missa encerrada. Nenhuma intencao pendente.",
+        dispatched: true,
+        intentionCount: 0,
+      };
+    }
+
+    const parish = await this.prisma.parish.findUnique({ where: { id: parishId } });
+    if (!parish) throw new NotFoundException("Paroquia nao encontrada");
+
+    if (!parish.dispatchEmails || parish.dispatchEmails.length === 0) {
+      return {
+        message: "Nenhum e-mail de despacho configurado na paroquia.",
+        dispatched: false,
+      };
+    }
+
+    // Group intentions
+    const grouped: Record<string, typeof pendingIntentions> = {
+      SUFRAGIO: [],
+      SUPLICAS: [],
+      ACAO_DE_GRACAS: [],
+    };
+    for (const intention of pendingIntentions) {
+      if (grouped[intention.group]) {
+        grouped[intention.group].push(intention);
+      }
+    }
+
+    // Generate PDF
+    const PDFDocument = (await import("pdfkit")).default;
+    const { PassThrough } = await import("stream");
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const passThrough = new PassThrough();
+    const pdfChunks: Buffer[] = [];
+    passThrough.on("data", (chunk: Buffer) => pdfChunks.push(chunk));
+    doc.pipe(passThrough);
+
+    const formattedDate = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
+    doc.font("Helvetica-Bold").fontSize(14);
+    doc.text(parish.parishName, { align: "center" });
+    doc.moveDown(0.5);
+    doc.font("Helvetica").fontSize(11);
+    doc.text(`Data: ${formattedDate}  Horario: ${massTime}`, { align: "center" });
+    doc.moveDown(0.3);
+    doc.font("Helvetica-Bold").fontSize(12);
+    doc.text("Intencoes da Santa Missa", { align: "center" });
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(1).stroke();
+    doc.moveDown(0.5);
+
+    const GROUP_LABELS: Record<string, string> = {
+      SUFRAGIO: "Sufragio",
+      SUPLICAS: "Suplicas",
+      ACAO_DE_GRACAS: "Acao de Gracas",
+    };
+
+    for (const group of ["SUFRAGIO", "SUPLICAS", "ACAO_DE_GRACAS"]) {
+      const items = grouped[group];
+      if (items.length === 0) continue;
+      doc.font("Helvetica-Bold").fontSize(11);
+      doc.text(`${GROUP_LABELS[group]} (${items.length})`);
+      doc.moveDown(0.3);
+      doc.font("Helvetica").fontSize(10);
+      for (const item of items) {
+        const parts = [item.intentionType.name];
+        if (item.deceasedName) parts.push(item.deceasedName);
+        if (item.familyNames) parts.push(item.familyNames);
+        if (item.complement) parts.push(item.complement);
+        doc.text(`  • ${parts.join(" - ")}`, { width: 475 });
+      }
+      doc.moveDown(0.5);
+    }
+
+    doc.end();
+    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+      passThrough.on("end", () => resolve(Buffer.concat(pdfChunks)));
+      passThrough.on("error", reject);
+    });
+
+    // Upload and send
+    const storageKey = `dispatches/${parishId}/${todayStr.replace(/-/g, "")}/${massTime.replace(":", "")}.pdf`;
+    await this.storage.upload(storageKey, pdfBuffer, "application/pdf");
+
+    const pdfFilename = `intencoes_${todayStr.replace(/-/g, "")}_${massTime.replace(":", "")}.pdf`;
+    const subject = `Intencoes da Missa - ${parish.parishName} - ${formattedDate} ${massTime}`;
+    await this.email.sendDispatchEmail(parish.dispatchEmails, subject, pdfBuffer, pdfFilename);
+
+    const batch = await this.prisma.dispatchBatch.create({
+      data: {
+        parishId,
+        scope: "PER_MASS",
+        massDate: todayDate,
+        massTime,
+        pdfStorageKey: storageKey,
+        sentToEmails: parish.dispatchEmails,
+        sentAt: new Date(),
+        status: "SENT",
+      },
+    });
+
+    const intentionIds = pendingIntentions.map((i) => i.id);
+    await this.prisma.requestIntention.updateMany({
+      where: { id: { in: intentionIds } },
+      data: { dispatchedAt: new Date(), dispatchBatchId: batch.id },
+    });
+
     return {
-      message:
-        "Despacho manual solicitado. O processamento sera feito em breve.",
-      parishId,
+      message: `Despacho realizado! ${pendingIntentions.length} intencao(oes) enviada(s).`,
+      dispatched: true,
+      intentionCount: pendingIntentions.length,
     };
   }
 

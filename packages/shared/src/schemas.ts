@@ -56,9 +56,7 @@ export const loginSchema = z.object({
 
 export const parishSettingsSchema = z.object({
   maxIntentionsPerRequest: z.number().int().min(1).max(20),
-  dispatchTime: z
-    .string()
-    .regex(/^\d{2}:\d{2}$/, "Horario deve estar no formato HH:mm"),
+  dispatchMinutesBefore: z.number().int().min(5).max(1440),
   dispatchScope: z.nativeEnum(DispatchScope),
 });
 

@@ -95,7 +95,7 @@ model User {
 model ParishSettings {
   parishId                String        @id @map("parish_id") @db.Uuid
   maxIntentionsPerRequest Int           @default(5) @map("max_intentions_per_request")
-  dispatchTime            String        @default("18:00") @map("dispatch_time")
+  dispatchMinutesBefore   Int           @default(30) @map("dispatch_minutes_before")
   dispatchScope           DispatchScope @default(PER_MASS) @map("dispatch_scope")
   dispatchTimezone        String        @default("America/Sao_Paulo") @map("dispatch_timezone")
 

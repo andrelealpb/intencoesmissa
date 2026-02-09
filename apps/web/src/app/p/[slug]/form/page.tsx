@@ -14,6 +14,7 @@ import { apiFetch } from "@/lib/api";
 interface MassOption {
   time: string;
   title?: string | null;
+  closed?: boolean;
 }
 
 interface IntentionType {
@@ -334,15 +335,21 @@ export default function IntentionFormPage() {
                           <button
                             key={opt.time}
                             type="button"
-                            onClick={() => setMassTime(opt.time)}
+                            disabled={opt.closed}
+                            onClick={() => !opt.closed && setMassTime(opt.time)}
                             className={`px-3 py-3 rounded-lg border text-sm font-medium transition-colors min-h-[48px] ${
-                              massTime === opt.time
-                                ? "bg-primary-600 text-white border-primary-600"
-                                : "bg-white text-gray-700 border-gray-200 hover:border-primary-300 active:bg-primary-50"
+                              opt.closed
+                                ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                : massTime === opt.time
+                                  ? "bg-primary-600 text-white border-primary-600"
+                                  : "bg-white text-gray-700 border-gray-200 hover:border-primary-300 active:bg-primary-50"
                             }`}
                           >
                             {opt.time}
-                            {opt.title && (
+                            {opt.closed && (
+                              <span className="block text-xs mt-0.5">Encerrada</span>
+                            )}
+                            {!opt.closed && opt.title && (
                               <span className="block text-xs opacity-75 mt-0.5">{opt.title}</span>
                             )}
                           </button>

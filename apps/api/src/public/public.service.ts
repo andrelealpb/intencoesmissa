@@ -38,6 +38,18 @@ export class PublicService {
     const parsedDate = new Date(date + "T00:00:00Z");
     const weekday = parsedDate.getUTCDay();
 
+    // Find already-dispatched mass times for this date
+    const dispatchedBatches = await this.prisma.dispatchBatch.findMany({
+      where: {
+        parishId: parish.id,
+        massDate: parsedDate,
+        status: "SENT",
+        massTime: { not: null },
+      },
+      select: { massTime: true },
+    });
+    const closedTimes = new Set(dispatchedBatches.map((b) => b.massTime));
+
     // Check exceptions first for this date
     const exceptions = await this.prisma.massException.findMany({
       where: {
@@ -54,6 +66,7 @@ export class PublicService {
         time: e.time,
         title: e.title,
         isException: true,
+        closed: closedTimes.has(e.time),
       }));
     }
 
@@ -72,6 +85,7 @@ export class PublicService {
       time: s.time,
       title: null,
       isException: false,
+      closed: closedTimes.has(s.time),
     }));
   }
 
@@ -156,6 +170,22 @@ export class PublicService {
           "Horario de missa nao disponivel para esta data",
         );
       }
+    }
+
+    // Check if this mass has already been dispatched (closed)
+    const existingDispatch = await this.prisma.dispatchBatch.findFirst({
+      where: {
+        parishId: parish.id,
+        massDate: parsedDate,
+        massTime: input.massTime,
+        status: "SENT",
+      },
+    });
+
+    if (existingDispatch) {
+      throw new BadRequestException(
+        "As intencoes para esta missa ja foram encerradas.",
+      );
     }
 
     // Generate protocol: count existing requests for this parish this year

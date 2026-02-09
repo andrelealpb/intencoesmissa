@@ -268,9 +268,17 @@ export class AdminController {
     return this.adminService.downloadDispatch(getParishId(req), id);
   }
 
+  @Get("dispatches/next-mass")
+  getNextMass(@Req() req: AuthenticatedRequest) {
+    return this.adminService.getNextMass(getParishId(req));
+  }
+
   @Post("dispatches/run-now")
-  runDispatchNow(@Req() req: AuthenticatedRequest) {
-    return this.adminService.runDispatchNow(getParishId(req));
+  runDispatchNow(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: { massTime: string },
+  ) {
+    return this.adminService.runDispatchNow(getParishId(req), body.massTime);
   }
 
   // ── Dashboard ──────────────────────────────────────────
