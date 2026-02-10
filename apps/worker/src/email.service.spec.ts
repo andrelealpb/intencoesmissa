@@ -1,20 +1,16 @@
 import { EmailService } from "./email.service";
 
-jest.mock("nodemailer", () => ({
-  default: {
-    createTransport: jest.fn().mockReturnValue({
-      sendMail: jest.fn().mockResolvedValue({ messageId: "test-id" }),
-    }),
-  },
-  createTransport: jest.fn().mockReturnValue({
-    sendMail: jest.fn().mockResolvedValue({ messageId: "test-id" }),
-  }),
-}));
+// Mock global fetch
+const mockFetch = jest.fn();
+global.fetch = mockFetch as any;
 
 describe("EmailService", () => {
   let service: EmailService;
 
   beforeEach(() => {
+    process.env.MAILERSEND_API_TOKEN = "test-token";
+    process.env.SMTP_FROM = "test@example.com";
+    mockFetch.mockReset();
     service = new EmailService();
   });
 
@@ -23,14 +19,38 @@ describe("EmailService", () => {
   });
 
   describe("sendDispatchEmail", () => {
-    it("should send an email with PDF attachment", async () => {
-      const to = ["padre@parish.com"];
-      const subject = "Test Subject";
-      const pdfBuffer = Buffer.from("fake-pdf");
-      const pdfFilename = "test.pdf";
+    it("should send an email via MailerSend API", async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 202,
+        headers: { get: () => "test-message-id" },
+      });
 
-      await service.sendDispatchEmail(to, subject, pdfBuffer, pdfFilename);
-      // If it doesn't throw, it's successful (mocked transporter)
+      await service.sendDispatchEmail(
+        ["padre@parish.com"],
+        "Test Subject",
+        Buffer.from("fake-pdf"),
+        "test.pdf",
+      );
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://api.mailersend.com/v1/email",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    it("should skip sending when API token is not configured", async () => {
+      delete process.env.MAILERSEND_API_TOKEN;
+      service = new EmailService();
+
+      await service.sendDispatchEmail(
+        ["padre@parish.com"],
+        "Test",
+        Buffer.from("pdf"),
+        "test.pdf",
+      );
+
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

@@ -48,7 +48,7 @@ describe("HealthService", () => {
       expect(result).toHaveProperty("services");
       expect(result.services).toHaveProperty("db");
       expect(result.services).toHaveProperty("s3");
-      expect(result.services).toHaveProperty("smtp");
+      expect(result.services).toHaveProperty("email");
     });
   });
 });

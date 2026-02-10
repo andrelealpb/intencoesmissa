@@ -6,7 +6,7 @@ const mockHealthService = {
   check: jest.fn(),
   checkDb: jest.fn(),
   checkS3: jest.fn(),
-  checkSmtp: jest.fn(),
+  checkEmail: jest.fn(),
 };
 
 describe("HealthController", () => {
@@ -37,7 +37,7 @@ describe("HealthController", () => {
         services: {
           db: { status: "ok" },
           s3: { status: "ok" },
-          smtp: { status: "ok" },
+          email: { status: "ok" },
         },
       };
       mockHealthService.check.mockResolvedValue(expected);
@@ -62,10 +62,10 @@ describe("HealthController", () => {
     });
   });
 
-  describe("checkSmtp", () => {
-    it("should return SMTP health status", async () => {
-      mockHealthService.checkSmtp.mockResolvedValue({ status: "ok" });
-      const result = await controller.checkSmtp();
+  describe("checkEmail", () => {
+    it("should return email health status", async () => {
+      mockHealthService.checkEmail.mockResolvedValue({ status: "ok" });
+      const result = await controller.checkEmail();
       expect(result).toEqual({ status: "ok" });
     });
   });
