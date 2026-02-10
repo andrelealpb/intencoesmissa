@@ -133,7 +133,20 @@ export class DispatchService {
       });
 
       if (intentions.length === 0) {
-        console.log(`[Dispatch] No intentions found for batch ${parish.parishName} ${dateStr} ${timeStr}`);
+        console.log(`[Dispatch] No intentions for ${parish.parishName} ${dateStr} ${timeStr}. Closing mass.`);
+        // Create SENT batch with no PDF to "close" the mass (block new intentions)
+        await this.prisma.dispatchBatch.create({
+          data: {
+            parishId: parish.id,
+            scope: scope,
+            massDate: massDate,
+            massTime: massTime,
+            pdfStorageKey: '',
+            sentToEmails: parish.dispatchEmails || [],
+            sentAt: new Date(),
+            status: DispatchStatus.SENT,
+          },
+        });
         return { success: true };
       }
 

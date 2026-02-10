@@ -13,15 +13,19 @@ export class StorageService {
   constructor() {
     this.bucket = process.env.S3_BUCKET || '';
 
-    this.s3 = new S3Client({
-      endpoint: process.env.S3_ENDPOINT,
+    const s3Config: any = {
       region: process.env.S3_REGION || 'us-east-1',
       credentials: {
         accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
         secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
       },
-      forcePathStyle: true,
-    });
+    };
+    // Only use endpoint and forcePathStyle for S3-compatible services (MinIO, etc)
+    if (process.env.S3_ENDPOINT) {
+      s3Config.endpoint = process.env.S3_ENDPOINT;
+      s3Config.forcePathStyle = true;
+    }
+    this.s3 = new S3Client(s3Config);
   }
 
   async upload(key: string, buffer: Buffer, contentType: string): Promise<void> {
