@@ -34,7 +34,18 @@ export class AdminService {
       where: { id: parishId },
     });
     if (!parish) throw new NotFoundException("Paroquia nao encontrada");
-    return parish;
+
+    // Generate fresh signed URLs
+    let logoUrl = parish.logoUrl;
+    let pixQrCodeUrl = parish.pixQrCodeUrl;
+    if (parish.logoStorageKey) {
+      logoUrl = await this.storage.getSignedUrl(parish.logoStorageKey);
+    }
+    if (parish.pixQrCodeStorageKey) {
+      pixQrCodeUrl = await this.storage.getSignedUrl(parish.pixQrCodeStorageKey);
+    }
+
+    return { ...parish, logoUrl, pixQrCodeUrl };
   }
 
   async updateParishProfile(parishId: string, data: ParishProfileInput) {

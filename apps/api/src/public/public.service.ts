@@ -4,11 +4,15 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { StorageService } from "../admin/storage.service";
 import { generateProtocol, CreateRequestInput } from "@missas/shared";
 
 @Injectable()
 export class PublicService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private storage: StorageService,
+  ) {}
 
   async getParishBySlug(slug: string) {
     const parish = await this.prisma.parish.findUnique({
@@ -20,9 +24,9 @@ export class PublicService {
         pastorName: true,
         addressJson: true,
         phonesJson: true,
-        logoUrl: true,
+        logoStorageKey: true,
         pixKey: true,
-        pixQrCodeUrl: true,
+        pixQrCodeStorageKey: true,
       },
     });
 
@@ -30,7 +34,28 @@ export class PublicService {
       throw new NotFoundException("Paroquia nao encontrada");
     }
 
-    return parish;
+    // Generate fresh signed URLs (not stored ones that expire)
+    let logoUrl: string | null = null;
+    let pixQrCodeUrl: string | null = null;
+
+    if (parish.logoStorageKey) {
+      logoUrl = await this.storage.getSignedUrl(parish.logoStorageKey);
+    }
+    if (parish.pixQrCodeStorageKey) {
+      pixQrCodeUrl = await this.storage.getSignedUrl(parish.pixQrCodeStorageKey);
+    }
+
+    return {
+      id: parish.id,
+      slug: parish.slug,
+      parishName: parish.parishName,
+      pastorName: parish.pastorName,
+      addressJson: parish.addressJson,
+      phonesJson: parish.phonesJson,
+      logoUrl,
+      pixKey: parish.pixKey,
+      pixQrCodeUrl,
+    };
   }
 
   async getMassOptions(slug: string, date: string) {
