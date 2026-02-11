@@ -232,32 +232,53 @@ export default function NoticesPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Missas que devem ler este aviso
                 </label>
-                <p className="text-xs text-gray-500 mb-2">
-                  Selecione os horarios. Se nenhum for selecionado, o aviso aparece em todas as missas.
-                </p>
                 {availableTimes.length === 0 ? (
-                  <p className="text-xs text-gray-400">Nenhum horario de missa cadastrado.</p>
+                  <p className="text-sm text-gray-500">Nenhum horario de missa cadastrado.</p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {availableTimes.map((time) => (
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs text-gray-500">
+                        {form.massTimes.length === 0
+                          ? 'Nenhum selecionado = todas as missas'
+                          : `${form.massTimes.length} horario(s) selecionado(s)`}
+                      </p>
                       <button
-                        key={time}
                         type="button"
-                        onClick={() => toggleMassTime(time)}
-                        className={`px-3 py-2 rounded border text-sm transition-colors ${
-                          form.massTimes.includes(time)
-                            ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
-                        }`}
+                        onClick={() => setForm((prev) => ({
+                          ...prev,
+                          massTimes: prev.massTimes.length === availableTimes.length ? [] : [...availableTimes],
+                        }))}
+                        className="text-xs text-blue-600 hover:underline"
                       >
-                        <div className="font-medium">{time}</div>
-                        <div className="text-xs opacity-75">{getWeekdaysForTime(time)}</div>
+                        {form.massTimes.length === availableTimes.length ? 'Limpar selecao' : 'Selecionar todas'}
                       </button>
-                    ))}
-                  </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {availableTimes.map((time) => {
+                        const selected = form.massTimes.includes(time);
+                        return (
+                          <button
+                            key={time}
+                            type="button"
+                            onClick={() => toggleMassTime(time)}
+                            className={`px-3 py-3 rounded-lg border text-sm font-medium transition-colors min-h-[48px] ${
+                              selected
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300 active:bg-blue-50'
+                            }`}
+                          >
+                            <div className="text-base font-semibold">{time}</div>
+                            <div className={`text-xs mt-0.5 ${selected ? 'text-blue-100' : 'text-gray-400'}`}>
+                              {getWeekdaysForTime(time)}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
 
