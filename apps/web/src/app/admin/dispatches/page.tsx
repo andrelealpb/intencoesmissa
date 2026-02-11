@@ -13,6 +13,7 @@ interface Dispatch {
   sentAt: string;
   sentToEmails: string[];
   pdfStorageKey?: string;
+  errorMessage?: string;
   _count: { intentions: number };
 }
 
@@ -31,6 +32,7 @@ interface DispatchDetail {
   status: string;
   sentAt: string;
   sentToEmails: string[];
+  errorMessage?: string;
   intentions: {
     id: string;
     group: string;
@@ -239,6 +241,11 @@ export default function DispatchesPage() {
               <p><strong>Enviado em:</strong> {new Date(detail.sentAt).toLocaleString('pt-BR')}</p>
               <p><strong>Emails:</strong> {detail.sentToEmails.join(', ')}</p>
               <p><strong>Total intencoes:</strong> {detail.intentions.length}</p>
+              {detail.status === 'FAILED' && detail.errorMessage && (
+                <div className="bg-red-50 border border-red-200 rounded p-2 mt-2">
+                  <p className="text-red-700 text-xs"><strong>Erro:</strong> {detail.errorMessage}</p>
+                </div>
+              )}
             </div>
 
             {detail.intentions.length === 0 ? (
@@ -299,6 +306,11 @@ export default function DispatchesPage() {
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${d.status === 'SENT' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                     {d.status === 'SENT' ? 'Enviado' : 'Falhou'}
                   </span>
+                  {d.status === 'FAILED' && d.errorMessage && (
+                    <p className="text-xs text-red-600 mt-1 max-w-xs truncate" title={d.errorMessage}>
+                      {d.errorMessage}
+                    </p>
+                  )}
                 </td>
                 <td className="p-3 text-center">{d._count.intentions}</td>
                 <td className="p-3 text-gray-500">{new Date(d.sentAt).toLocaleString('pt-BR')}</td>
