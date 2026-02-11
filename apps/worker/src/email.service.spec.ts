@@ -8,8 +8,9 @@ describe("EmailService", () => {
   let service: EmailService;
 
   beforeEach(() => {
-    process.env.MAILERSEND_API_TOKEN = "test-token";
+    process.env.BREVO_API_KEY = "test-api-key";
     process.env.SMTP_FROM = "test@example.com";
+    process.env.SMTP_FROM_NAME = "Test Sender";
     mockFetch.mockReset();
     service = new EmailService();
   });
@@ -19,11 +20,11 @@ describe("EmailService", () => {
   });
 
   describe("sendDispatchEmail", () => {
-    it("should send an email via MailerSend API", async () => {
+    it("should send an email via Brevo API", async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        status: 202,
-        headers: { get: () => "test-message-id" },
+        status: 201,
+        json: async () => ({ messageId: "test-message-id" }),
       });
 
       await service.sendDispatchEmail(
@@ -34,13 +35,13 @@ describe("EmailService", () => {
       );
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "https://api.mailersend.com/v1/email",
+        "https://api.brevo.com/v3/smtp/email",
         expect.objectContaining({ method: "POST" }),
       );
     });
 
-    it("should skip sending when API token is not configured", async () => {
-      delete process.env.MAILERSEND_API_TOKEN;
+    it("should skip sending when API key is not configured", async () => {
+      delete process.env.BREVO_API_KEY;
       service = new EmailService();
 
       await service.sendDispatchEmail(

@@ -91,13 +91,13 @@ export class HealthService {
   }
 
   async checkEmail(): Promise<HealthStatus> {
-    const apiToken = process.env.MAILERSEND_API_TOKEN;
+    const apiKey = process.env.BREVO_API_KEY;
     const from = process.env.SMTP_FROM;
 
-    if (!apiToken) {
+    if (!apiKey) {
       return {
         status: "error",
-        message: "MAILERSEND_API_TOKEN nao configurado",
+        message: "BREVO_API_KEY nao configurado",
         details: {
           token: "VAZIO",
           from: from || "VAZIO",
@@ -107,20 +107,20 @@ export class HealthService {
 
     try {
       // Verify token by fetching account info
-      const response = await fetch("https://api.mailersend.com/v1/api-quota", {
-        headers: { Authorization: `Bearer ${apiToken}` },
+      const response = await fetch("https://api.brevo.com/v3/account", {
+        headers: { "api-key": apiKey, Accept: "application/json" },
       });
       if (!response.ok) {
         const text = await response.text();
         return {
           status: "error",
-          message: `MailerSend API ${response.status}: ${text}`,
+          message: `Brevo API ${response.status}: ${text}`,
           details: { from: from || "VAZIO" },
         };
       }
       return {
         status: "ok",
-        details: { provider: "MailerSend API", from: from || "noreply@missas.app" },
+        details: { provider: "Brevo API", from: from || "noreply@missas.app" },
       };
     } catch (error: any) {
       return { status: "error", message: error.message };

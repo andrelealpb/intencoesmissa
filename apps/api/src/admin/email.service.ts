@@ -3,22 +3,24 @@ import { Injectable, Logger } from "@nestjs/common";
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
-  private apiToken: string | null = null;
+  private apiKey: string | null = null;
   private fromEmail: string;
+  private fromName: string;
 
   constructor() {
-    this.apiToken = process.env.MAILERSEND_API_TOKEN || null;
+    this.apiKey = process.env.BREVO_API_KEY || null;
     this.fromEmail = process.env.SMTP_FROM || "noreply@missas.app";
+    this.fromName = process.env.SMTP_FROM_NAME || "Intencoes de Missa";
 
-    if (this.apiToken) {
-      this.logger.log(`MailerSend API configurada. from=${this.fromEmail}`);
+    if (this.apiKey) {
+      this.logger.log(`Brevo API configurada. from=${this.fromName} <${this.fromEmail}>`);
     } else {
-      this.logger.warn("MAILERSEND_API_TOKEN nao configurado. Envio de e-mail desabilitado.");
+      this.logger.warn("BREVO_API_KEY nao configurado. Envio de e-mail desabilitado.");
     }
   }
 
   isConfigured(): boolean {
-    return this.apiToken !== null;
+    return this.apiKey !== null;
   }
 
   async sendDispatchEmail(
@@ -27,61 +29,53 @@ export class EmailService {
     pdfBuffer: Buffer,
     pdfFilename: string,
   ): Promise<void> {
-    if (!this.apiToken) {
+    if (!this.apiKey) {
       this.logger.warn(`E-mail desabilitado, ignorando envio para: ${to.join(", ")}`);
       return;
     }
 
-    this.logger.log(`Enviando e-mail via MailerSend API: from=${this.fromEmail} to=${to.join(", ")} subject="${subject}"`);
+    this.logger.log(`Enviando e-mail via Brevo API: from=${this.fromName} <${this.fromEmail}> to=${to.join(", ")} subject="${subject}"`);
 
-    const base64Content = pdfBuffer.toString("base64");
-    const errors: string[] = [];
+    const body = {
+      sender: { name: this.fromName, email: this.fromEmail },
+      to: to.map((email) => ({ email })),
+      subject,
+      textContent: "Segue em anexo o despacho de intencoes de missa.",
+      htmlContent: `
+        <p>Prezado(a),</p>
+        <p>Segue em anexo o PDF com as inten&ccedil;&otilde;es da Santa Missa.</p>
+        <p>Este &eacute; um envio autom&aacute;tico. Por favor, n&atilde;o responda a este e-mail.</p>
+      `,
+      attachment: [
+        {
+          name: pdfFilename,
+          content: pdfBuffer.toString("base64"),
+        },
+      ],
+    };
 
-    for (const recipient of to) {
-      const body = {
-        from: { email: this.fromEmail },
-        to: [{ email: recipient }],
-        subject,
-        text: "Segue em anexo o despacho de intencoes de missa.",
-        attachments: [
-          {
-            filename: pdfFilename,
-            content: base64Content,
-            disposition: "attachment",
-          },
-        ],
-      };
+    try {
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": this.apiKey,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(body),
+      });
 
-      try {
-        const response = await fetch("https://api.mailersend.com/v1/email", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${this.apiToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          errors.push(`${recipient}: ${response.status} ${errorText}`);
-          this.logger.error(`Falha ao enviar para ${recipient}: ${response.status} ${errorText}`);
-        } else {
-          const messageId = response.headers.get("x-message-id") || "N/A";
-          this.logger.log(`E-mail enviado para ${recipient}. messageId=${messageId}`);
-        }
-      } catch (err: any) {
-        errors.push(`${recipient}: ${err.message}`);
-        this.logger.error(`Erro ao enviar para ${recipient}: ${err.message}`, err.stack);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Brevo API ${response.status}: ${errorText}`);
       }
-    }
 
-    if (errors.length > 0) {
-      const msg = `Falha em ${errors.length}/${to.length} envios: ${errors.join("; ")}`;
-      this.logger.error(msg);
-      throw new Error(msg);
+      const result = await response.json();
+      const messageId = result.messageId || "N/A";
+      this.logger.log(`E-mail enviado com sucesso. messageId=${messageId}`);
+    } catch (err: any) {
+      this.logger.error(`Falha ao enviar e-mail: ${err.message}`, err.stack);
+      throw err;
     }
-
-    this.logger.log(`Todos os ${to.length} e-mails enviados com sucesso.`);
   }
 }
