@@ -61,7 +61,7 @@ export class EmailService {
       throw new Error(`Brevo API ${response.status}: ${errorText}`);
     }
 
-    const result = await response.json();
+    const result = (await response.json()) as { messageId?: string };
     const messageId = result.messageId || 'N/A';
     console.log(`[Email] E-mail enviado com sucesso. messageId=${messageId}`);
   }
