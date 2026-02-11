@@ -229,11 +229,15 @@ export class DispatchService {
 
       const pdfBuffer = await this.pdfService.generatePdf(pdfData);
 
-      // Upload PDF to storage
+      // Upload PDF to storage (non-blocking — dispatch continues even if S3 fails)
       const storageKey = `dispatches/${parish.id}/${dateStr.replace(/-/g, '')}/${timeStr}.pdf`;
-      await this.storageService.upload(storageKey, pdfBuffer, 'application/pdf');
+      try {
+        await this.storageService.upload(storageKey, pdfBuffer, 'application/pdf');
+      } catch (s3Error: any) {
+        console.error(`[Dispatch] S3 upload failed for ${parish.parishName} ${dateStr} ${timeStr} (continuing without upload):`, s3Error.message);
+      }
 
-      // Send email with PDF attachment
+      // Send email with PDF attachment (non-blocking — batch is saved even if email fails)
       const formattedDate = this.formatDateDDMMYYYY(massDate);
       const subject = massTime
         ? `Intenções da Missa - ${parish.parishName} - ${formattedDate} ${massTime}`
@@ -243,12 +247,16 @@ export class DispatchService {
         ? `intencoes_${dateStr.replace(/-/g, '')}_${massTime.replace(':', '')}.pdf`
         : `intencoes_${dateStr.replace(/-/g, '')}_consolidado.pdf`;
 
-      await this.emailService.sendDispatchEmail(
-        parish.dispatchEmails,
-        subject,
-        pdfBuffer,
-        pdfFilename,
-      );
+      try {
+        await this.emailService.sendDispatchEmail(
+          parish.dispatchEmails,
+          subject,
+          pdfBuffer,
+          pdfFilename,
+        );
+      } catch (emailError: any) {
+        console.error(`[Dispatch] Email send failed for ${parish.parishName} ${dateStr} ${timeStr} (continuing):`, emailError.message);
+      }
 
       // Create DispatchBatch record with SENT status
       const batch = await this.prisma.dispatchBatch.create({
