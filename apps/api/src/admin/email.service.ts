@@ -34,40 +34,54 @@ export class EmailService {
 
     this.logger.log(`Enviando e-mail via MailerSend API: from=${this.fromEmail} to=${to.join(", ")} subject="${subject}"`);
 
-    const body = {
-      from: { email: this.fromEmail },
-      to: to.map((email) => ({ email })),
-      subject,
-      text: "Segue em anexo o despacho de intencoes de missa.",
-      attachments: [
-        {
-          filename: pdfFilename,
-          content: pdfBuffer.toString("base64"),
-          disposition: "attachment",
-        },
-      ],
-    };
+    const base64Content = pdfBuffer.toString("base64");
+    const errors: string[] = [];
 
-    try {
-      const response = await fetch("https://api.mailersend.com/v1/email", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
+    for (const recipient of to) {
+      const body = {
+        from: { email: this.fromEmail },
+        to: [{ email: recipient }],
+        subject,
+        text: "Segue em anexo o despacho de intencoes de missa.",
+        attachments: [
+          {
+            filename: pdfFilename,
+            content: base64Content,
+            disposition: "attachment",
+          },
+        ],
+      };
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`MailerSend API ${response.status}: ${errorText}`);
+      try {
+        const response = await fetch("https://api.mailersend.com/v1/email", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          errors.push(`${recipient}: ${response.status} ${errorText}`);
+          this.logger.error(`Falha ao enviar para ${recipient}: ${response.status} ${errorText}`);
+        } else {
+          const messageId = response.headers.get("x-message-id") || "N/A";
+          this.logger.log(`E-mail enviado para ${recipient}. messageId=${messageId}`);
+        }
+      } catch (err: any) {
+        errors.push(`${recipient}: ${err.message}`);
+        this.logger.error(`Erro ao enviar para ${recipient}: ${err.message}`, err.stack);
       }
-
-      const messageId = response.headers.get("x-message-id") || "N/A";
-      this.logger.log(`E-mail enviado com sucesso. messageId=${messageId} status=${response.status}`);
-    } catch (err: any) {
-      this.logger.error(`Falha ao enviar e-mail: ${err.message}`, err.stack);
-      throw err;
     }
+
+    if (errors.length > 0) {
+      const msg = `Falha em ${errors.length}/${to.length} envios: ${errors.join("; ")}`;
+      this.logger.error(msg);
+      throw new Error(msg);
+    }
+
+    this.logger.log(`Todos os ${to.length} e-mails enviados com sucesso.`);
   }
 }

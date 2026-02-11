@@ -26,40 +26,57 @@ export class EmailService {
 
     console.log(`[Email] Enviando via MailerSend API: to=${to.join(', ')} subject="${subject}"`);
 
-    const body = {
-      from: { email: this.fromEmail },
-      to: to.map((email) => ({ email })),
-      subject,
-      text: 'Segue em anexo o PDF com as intencoes da Santa Missa.',
-      html: `
-        <p>Prezado(a),</p>
-        <p>Segue em anexo o PDF com as intencoes da Santa Missa.</p>
-        <p>Este e um envio automatico. Por favor, nao responda a este e-mail.</p>
-      `,
-      attachments: [
-        {
-          filename: pdfFilename,
-          content: pdfBuffer.toString('base64'),
-          disposition: 'attachment',
-        },
-      ],
-    };
+    const base64Content = pdfBuffer.toString('base64');
+    const errors: string[] = [];
 
-    const response = await fetch('https://api.mailersend.com/v1/email', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.apiToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
+    for (const recipient of to) {
+      const body = {
+        from: { email: this.fromEmail },
+        to: [{ email: recipient }],
+        subject,
+        text: 'Segue em anexo o PDF com as intencoes da Santa Missa.',
+        html: `
+          <p>Prezado(a),</p>
+          <p>Segue em anexo o PDF com as intencoes da Santa Missa.</p>
+          <p>Este e um envio automatico. Por favor, nao responda a este e-mail.</p>
+        `,
+        attachments: [
+          {
+            filename: pdfFilename,
+            content: base64Content,
+            disposition: 'attachment',
+          },
+        ],
+      };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`MailerSend API ${response.status}: ${errorText}`);
+      try {
+        const response = await fetch('https://api.mailersend.com/v1/email', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          errors.push(`${recipient}: ${response.status} ${errorText}`);
+          console.error(`[Email] Falha ao enviar para ${recipient}: ${response.status} ${errorText}`);
+        } else {
+          const messageId = response.headers.get('x-message-id') || 'N/A';
+          console.log(`[Email] E-mail enviado para ${recipient}. messageId=${messageId}`);
+        }
+      } catch (err: any) {
+        errors.push(`${recipient}: ${err.message}`);
+        console.error(`[Email] Erro ao enviar para ${recipient}:`, err.message);
+      }
     }
 
-    const messageId = response.headers.get('x-message-id') || 'N/A';
-    console.log(`[Email] E-mail enviado com sucesso. messageId=${messageId}`);
+    if (errors.length > 0) {
+      throw new Error(`Falha em ${errors.length}/${to.length} envios: ${errors.join('; ')}`);
+    }
+
+    console.log(`[Email] Todos os ${to.length} e-mails enviados com sucesso.`);
   }
 }
