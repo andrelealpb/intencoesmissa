@@ -50,9 +50,10 @@ export class DispatchService {
           .map((s: any) => s.time);
       }
 
-      // Check each mass: dispatch if current time is within the dispatch window
-      // Window: from (massTime - minutesBefore) until massTime
-      // The duplicate check in processParishMass prevents re-dispatching
+      // Check each mass: dispatch if current time >= dispatchAt
+      // The duplicate check in processParishMass (SENT or FAILED) prevents re-dispatching
+      // Window extends past mass time to catch up on missed dispatches (e.g. worker was offline)
+      // but stops at end of day
       for (const massTime of massTimes) {
         const [h, m] = massTime.split(':').map(Number);
         const massMinutes = h * 60 + m;
@@ -60,63 +61,12 @@ export class DispatchService {
 
         // Skip if we haven't reached the dispatch window yet
         if (currentMinutes < dispatchAt) continue;
-        // Skip if the mass has already started (window closed)
-        if (currentMinutes >= massMinutes) continue;
-
-        console.log(`[Dispatch] Within dispatch window for ${parish.parishName} mass at ${massTime} (dispatchAt=${Math.floor(dispatchAt / 60)}:${String(dispatchAt % 60).padStart(2, '0')}, now=${spNow.toTimeString().slice(0, 5)})`);
 
         try {
           const result = await this.processParishMass(parish, todayDate, massTime);
           if (result.success) totalBatchesCreated++;
-          else totalFailed++;
         } catch (error) {
           console.error(`[Dispatch] Error processing parish ${parish.id} mass ${massTime}:`, error);
-          totalFailed++;
-        }
-      }
-    }
-
-    // Catch-up: check for any past masses today that were never dispatched
-    // This handles cases where the worker was offline during the dispatch window
-    for (const parish of parishes) {
-      if (!parish.settings) continue;
-
-      let massTimes: string[];
-      if (parish.massExceptions.length > 0) {
-        massTimes = parish.massExceptions.map((e: any) => e.time);
-      } else {
-        massTimes = parish.massSchedules
-          .filter((s: any) => s.weekday === weekday)
-          .map((s: any) => s.time);
-      }
-
-      for (const massTime of massTimes) {
-        const [h, m] = massTime.split(':').map(Number);
-        const massMinutes = h * 60 + m;
-
-        // Only catch up masses that have already started (window was missed)
-        if (currentMinutes < massMinutes) continue;
-
-        // Check if already dispatched
-        const existingBatch = await this.prisma.dispatchBatch.findFirst({
-          where: {
-            parishId: parish.id,
-            massDate: todayDate,
-            massTime,
-            status: { in: [DispatchStatus.SENT, DispatchStatus.FAILED] },
-          },
-        });
-
-        if (existingBatch) continue;
-
-        console.log(`[Dispatch] Catch-up: missed dispatch for ${parish.parishName} mass at ${massTime}. Dispatching now.`);
-
-        try {
-          const result = await this.createBatch(parish, todayDate, massTime, DispatchScope.PER_MASS);
-          if (result.success) totalBatchesCreated++;
-          else totalFailed++;
-        } catch (error) {
-          console.error(`[Dispatch] Catch-up error for ${parish.parishName} mass ${massTime}:`, error);
           totalFailed++;
         }
       }
@@ -130,19 +80,19 @@ export class DispatchService {
     massDate: Date,
     massTime: string,
   ): Promise<{ success: boolean }> {
-    // Check if already dispatched
+    // Check if already dispatched (SENT or FAILED — both mean "already handled")
     const existingBatch = await this.prisma.dispatchBatch.findFirst({
       where: {
         parishId: parish.id,
         massDate,
         massTime,
-        status: DispatchStatus.SENT,
+        status: { in: [DispatchStatus.SENT, DispatchStatus.FAILED] },
       },
     });
 
     if (existingBatch) {
-      console.log(`[Dispatch] Batch already exists for ${parish.parishName} ${massTime}`);
-      return { success: true };
+      console.log(`[Dispatch] Batch already exists for ${parish.parishName} ${massTime} (status: ${existingBatch.status})`);
+      return { success: existingBatch.status === DispatchStatus.SENT };
     }
 
     return this.createBatch(parish, massDate, massTime, DispatchScope.PER_MASS);
@@ -244,23 +194,28 @@ export class DispatchService {
         }
       }
 
-      // Fetch active notices for this mass
-      const allNotices = await this.prisma.notice.findMany({
-        where: {
-          parishId: parish.id,
-          isActive: true,
-          OR: [
-            { massTimes: { isEmpty: true } },
-            { massTimes: { has: massTime || '' } },
-          ],
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-      const notices = allNotices.filter((n) => {
-        if (n.startDate && massDate < n.startDate) return false;
-        if (n.endDate && massDate > n.endDate) return false;
-        return true;
-      }).map((n) => ({ subject: n.subject, description: n.description }));
+      // Fetch active notices for this mass (safe: table may not exist yet)
+      let notices: { subject: string; description: string }[] = [];
+      try {
+        const allNotices = await this.prisma.notice.findMany({
+          where: {
+            parishId: parish.id,
+            isActive: true,
+            OR: [
+              { massTimes: { isEmpty: true } },
+              { massTimes: { has: massTime || '' } },
+            ],
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+        notices = allNotices.filter((n) => {
+          if (n.startDate && massDate < n.startDate) return false;
+          if (n.endDate && massDate > n.endDate) return false;
+          return true;
+        }).map((n) => ({ subject: n.subject, description: n.description }));
+      } catch (err) {
+        console.warn('[Dispatch] Could not fetch notices (table may not exist yet):', (err as any).message);
+      }
 
       // Generate PDF
       const pdfData = {
