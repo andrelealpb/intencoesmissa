@@ -25,6 +25,7 @@ import {
   massExceptionSchema,
   intentionTypeSchema,
   emolumentSchema,
+  noticeSchema,
 } from "@missas/shared";
 
 interface AuthenticatedRequest {
@@ -303,6 +304,40 @@ export class AdminController {
     @Body() body: { massTime: string; massDate?: string },
   ) {
     return this.adminService.runDispatchNow(getParishId(req), body.massTime, body.massDate);
+  }
+
+  // ── Notices (Avisos) ──────────────────────────────────
+
+  @Get("notices")
+  listNotices(@Req() req: AuthenticatedRequest) {
+    return this.adminService.listNotices(getParishId(req));
+  }
+
+  @Post("notices")
+  createNotice(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: unknown,
+  ) {
+    const data = noticeSchema.parse(body);
+    return this.adminService.createNotice(getParishId(req), data);
+  }
+
+  @Put("notices/:id")
+  updateNotice(
+    @Req() req: AuthenticatedRequest,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const data = noticeSchema.parse(body);
+    return this.adminService.updateNotice(getParishId(req), id, data);
+  }
+
+  @Delete("notices/:id")
+  deleteNotice(
+    @Req() req: AuthenticatedRequest,
+    @Param("id") id: string,
+  ) {
+    return this.adminService.deleteNotice(getParishId(req), id);
   }
 
   // ── Dashboard ──────────────────────────────────────────

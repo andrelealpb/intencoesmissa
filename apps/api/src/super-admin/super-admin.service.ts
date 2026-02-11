@@ -229,4 +229,70 @@ export class SuperAdminService {
     if (!user) throw new NotFoundException("Usuario nao encontrado");
     return this.prisma.user.delete({ where: { id } });
   }
+
+  // ── Notices (Avisos) — managed per parish ─────────────
+
+  async listNotices(parishId: string) {
+    const parish = await this.prisma.parish.findUnique({ where: { id: parishId } });
+    if (!parish) throw new NotFoundException("Paroquia nao encontrada");
+    return this.prisma.notice.findMany({
+      where: { parishId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async createNotice(
+    parishId: string,
+    data: {
+      subject: string;
+      description: string;
+      massTimes: string[];
+      startDate?: string | null;
+      endDate?: string | null;
+      isActive: boolean;
+    },
+  ) {
+    const parish = await this.prisma.parish.findUnique({ where: { id: parishId } });
+    if (!parish) throw new NotFoundException("Paroquia nao encontrada");
+    return this.prisma.notice.create({
+      data: {
+        parishId,
+        subject: data.subject,
+        description: data.description,
+        massTimes: data.massTimes,
+        startDate: data.startDate ? new Date(data.startDate + "T00:00:00.000Z") : null,
+        endDate: data.endDate ? new Date(data.endDate + "T00:00:00.000Z") : null,
+        isActive: data.isActive,
+      },
+    });
+  }
+
+  async updateNotice(
+    id: string,
+    data: {
+      subject?: string;
+      description?: string;
+      massTimes?: string[];
+      startDate?: string | null;
+      endDate?: string | null;
+      isActive?: boolean;
+    },
+  ) {
+    const notice = await this.prisma.notice.findUnique({ where: { id } });
+    if (!notice) throw new NotFoundException("Aviso nao encontrado");
+    const updateData: Record<string, unknown> = {};
+    if (data.subject !== undefined) updateData.subject = data.subject;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.massTimes !== undefined) updateData.massTimes = data.massTimes;
+    if (data.startDate !== undefined) updateData.startDate = data.startDate ? new Date(data.startDate + "T00:00:00.000Z") : null;
+    if (data.endDate !== undefined) updateData.endDate = data.endDate ? new Date(data.endDate + "T00:00:00.000Z") : null;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    return this.prisma.notice.update({ where: { id }, data: updateData });
+  }
+
+  async deleteNotice(id: string) {
+    const notice = await this.prisma.notice.findUnique({ where: { id } });
+    if (!notice) throw new NotFoundException("Aviso nao encontrado");
+    return this.prisma.notice.delete({ where: { id } });
+  }
 }

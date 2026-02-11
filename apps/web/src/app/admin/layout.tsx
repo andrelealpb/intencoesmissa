@@ -12,6 +12,7 @@ const navItems = [
   { href: '/admin/masses', label: 'Missas' },
   { href: '/admin/intention-types', label: 'Tipos de Intenção' },
   { href: '/admin/emoluments', label: 'Emolumentos' },
+  { href: '/admin/notices', label: 'Avisos' },
   { href: '/admin/dispatches', label: 'Disparos' },
   { href: '/admin/requests', label: 'Pedidos' },
   { href: '/admin/public-link', label: 'Link do Fiel' },

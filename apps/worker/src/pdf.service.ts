@@ -15,12 +15,18 @@ interface IntentionItem {
   };
 }
 
+interface NoticeItem {
+  subject: string;
+  description: string;
+}
+
 interface PdfData {
   parishName: string;
   massDate: string; // YYYY-MM-DD
   massTime: string | null;
   logoBuffer: Buffer | null;
   intentions: Record<string, IntentionItem[]>;
+  notices?: NoticeItem[];
 }
 
 const GROUP_LABELS: Record<string, string> = {
@@ -167,13 +173,39 @@ export class PdfService {
       doc.moveDown(0.5);
     }
 
+    // ── Notices (Avisos) ────────────────────────────────
+
+    if (data.notices && data.notices.length > 0 && doc.y < 740) {
+      doc.fillColor('black');
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(0.5).stroke();
+      doc.moveDown(0.4);
+
+      doc.font('Helvetica-Bold').fontSize(fontSize);
+      doc.text('Avisos', 50, doc.y, { width: 495 });
+      doc.moveDown(0.3);
+
+      doc.font('Helvetica').fontSize(fontSize - 1);
+      for (const notice of data.notices) {
+        if (doc.y > 760) break;
+        doc.font('Helvetica-Bold').fontSize(fontSize - 1);
+        doc.text(`${notice.subject}:`, 60, doc.y, { width: 475, continued: true });
+        doc.font('Helvetica').fontSize(fontSize - 1);
+        const descText = notice.description.length > 200
+          ? notice.description.substring(0, 197) + '...'
+          : notice.description;
+        doc.text(` ${descText}`, { width: 475 });
+        doc.moveDown(0.2);
+      }
+    }
+
     // ── Footer ──────────────────────────────────────────
 
     const now = new Date();
     const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
     const footerDate = this.formatDateTimeBR(spNow);
 
-    doc.font('Helvetica').fontSize(8).fillColor('gray');
+    doc.fillColor('gray');
+    doc.font('Helvetica').fontSize(8);
     doc.text(`Gerado em ${footerDate}`, 50, 790, {
       align: 'center',
       width: 495,

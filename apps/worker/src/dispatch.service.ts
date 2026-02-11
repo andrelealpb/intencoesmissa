@@ -244,6 +244,24 @@ export class DispatchService {
         }
       }
 
+      // Fetch active notices for this mass
+      const allNotices = await this.prisma.notice.findMany({
+        where: {
+          parishId: parish.id,
+          isActive: true,
+          OR: [
+            { massTimes: { isEmpty: true } },
+            { massTimes: { has: massTime || '' } },
+          ],
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      const notices = allNotices.filter((n) => {
+        if (n.startDate && massDate < n.startDate) return false;
+        if (n.endDate && massDate > n.endDate) return false;
+        return true;
+      }).map((n) => ({ subject: n.subject, description: n.description }));
+
       // Generate PDF
       const pdfData = {
         parishName: parish.parishName,
@@ -251,6 +269,7 @@ export class DispatchService {
         massTime: massTime,
         logoBuffer: logoBuffer,
         intentions: grouped,
+        notices,
       };
 
       const pdfBuffer = await this.pdfService.generatePdf(pdfData);

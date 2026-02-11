@@ -126,6 +126,19 @@ export const parishProfileSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Notice (aviso)
+// ---------------------------------------------------------------------------
+
+export const noticeSchema = z.object({
+  subject: z.string().min(1, "Assunto e obrigatorio"),
+  description: z.string().min(1, "Descricao e obrigatoria"),
+  massTimes: z.array(z.string()),
+  startDate: z.string().nullish(),
+  endDate: z.string().nullish(),
+  isActive: z.boolean(),
+});
+
+// ---------------------------------------------------------------------------
 // Inferred types (useful for forms / API handlers)
 // ---------------------------------------------------------------------------
 
@@ -137,3 +150,4 @@ export type MassScheduleInput = z.infer<typeof massScheduleSchema>;
 export type MassExceptionInput = z.infer<typeof massExceptionSchema>;
 export type EmolumentInput = z.infer<typeof emolumentSchema>;
 export type ParishProfileInput = z.infer<typeof parishProfileSchema>;
+export type NoticeInput = z.infer<typeof noticeSchema>;

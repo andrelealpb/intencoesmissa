@@ -8,6 +8,7 @@ import Link from 'next/link';
 const navItems = [
   { href: '/sa/parishes', label: 'Paróquias' },
   { href: '/sa/users', label: 'Usuários' },
+  { href: '/sa/notices', label: 'Avisos' },
 ];
 
 export default function SALayout({ children }: { children: ReactNode }) {

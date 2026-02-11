@@ -69,6 +69,7 @@ model Parish {
   emoluments       Emolument[]
   requests         Request[]
   dispatchBatches  DispatchBatch[]
+  notices          Notice[]
 
   @@map("parishes")
 }
@@ -233,4 +234,23 @@ model DispatchBatch {
   intentions RequestIntention[]
 
   @@map("dispatch_batches")
+}
+
+// ─── Notices (Avisos) ────────────────────────────────
+
+model Notice {
+  id          String    @id @default(uuid()) @db.Uuid
+  parishId    String    @map("parish_id") @db.Uuid
+  subject     String
+  description String
+  massTimes   String[]  @map("mass_times")  // ["08:00","19:00"] — empty = all masses
+  startDate   DateTime? @map("start_date") @db.Date
+  endDate     DateTime? @map("end_date") @db.Date
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  parish Parish @relation(fields: [parishId], references: [id], onDelete: Cascade)
+
+  @@map("notices")
 }

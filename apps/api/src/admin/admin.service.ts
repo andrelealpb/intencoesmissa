@@ -15,6 +15,7 @@ import type {
   MassExceptionInput,
   IntentionTypeInput,
   EmolumentInput,
+  NoticeInput,
 } from "@missas/shared";
 
 @Injectable()
@@ -627,6 +628,27 @@ export class AdminService {
         doc.moveDown(0.5);
       }
 
+      // Notices (Avisos)
+      const notices = await this.getActiveNoticesForMass(parishId, todayDate, massTime);
+      if (notices.length > 0 && doc.y < 740) {
+        doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(0.5).stroke();
+        doc.moveDown(0.4);
+        doc.font("Helvetica-Bold").fontSize(10);
+        doc.text("Avisos", { width: 495 });
+        doc.moveDown(0.3);
+        for (const notice of notices) {
+          if (doc.y > 760) break;
+          doc.font("Helvetica-Bold").fontSize(9);
+          doc.text(`${notice.subject}:`, 60, doc.y, { width: 475, continued: true });
+          doc.font("Helvetica").fontSize(9);
+          const descText = notice.description.length > 200
+            ? notice.description.substring(0, 197) + "..."
+            : notice.description;
+          doc.text(` ${descText}`, { width: 475 });
+          doc.moveDown(0.2);
+        }
+      }
+
       doc.end();
       pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
         passThrough.on("end", () => resolve(Buffer.concat(pdfChunks)));
@@ -802,10 +824,74 @@ export class AdminService {
     };
   }
 
+  // ── Notices (Avisos) ──────────────────────────────────
+
+  async listNotices(parishId: string) {
+    return this.prisma.notice.findMany({
+      where: { parishId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async createNotice(parishId: string, data: NoticeInput) {
+    return this.prisma.notice.create({
+      data: {
+        parishId,
+        subject: data.subject,
+        description: data.description,
+        massTimes: data.massTimes,
+        startDate: data.startDate ? new Date(data.startDate + "T00:00:00.000Z") : null,
+        endDate: data.endDate ? new Date(data.endDate + "T00:00:00.000Z") : null,
+        isActive: data.isActive,
+      },
+    });
+  }
+
+  async updateNotice(parishId: string, id: string, data: NoticeInput) {
+    await this.ensureOwnership("notice", id, parishId);
+    return this.prisma.notice.update({
+      where: { id },
+      data: {
+        subject: data.subject,
+        description: data.description,
+        massTimes: data.massTimes,
+        startDate: data.startDate ? new Date(data.startDate + "T00:00:00.000Z") : null,
+        endDate: data.endDate ? new Date(data.endDate + "T00:00:00.000Z") : null,
+        isActive: data.isActive,
+      },
+    });
+  }
+
+  async deleteNotice(parishId: string, id: string) {
+    await this.ensureOwnership("notice", id, parishId);
+    return this.prisma.notice.delete({ where: { id } });
+  }
+
+  async getActiveNoticesForMass(parishId: string, massDate: Date, massTime: string) {
+    const notices = await this.prisma.notice.findMany({
+      where: {
+        parishId,
+        isActive: true,
+        OR: [
+          { massTimes: { isEmpty: true } },
+          { massTimes: { has: massTime } },
+        ],
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    // Filter by date range
+    return notices.filter((n) => {
+      if (n.startDate && massDate < n.startDate) return false;
+      if (n.endDate && massDate > n.endDate) return false;
+      return true;
+    });
+  }
+
   // ── Helpers ────────────────────────────────────────────
 
   private async ensureOwnership(
-    model: "massSchedule" | "massException" | "intentionType" | "emolument",
+    model: "massSchedule" | "massException" | "intentionType" | "emolument" | "notice",
     id: string,
     parishId: string,
   ) {
@@ -832,6 +918,12 @@ export class AdminService {
         break;
       case "emolument":
         record = await this.prisma.emolument.findUnique({
+          where: { id },
+          select: { parishId: true },
+        });
+        break;
+      case "notice":
+        record = await this.prisma.notice.findUnique({
           where: { id },
           select: { parishId: true },
         });

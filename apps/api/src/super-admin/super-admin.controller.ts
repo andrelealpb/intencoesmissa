@@ -112,4 +112,48 @@ export class SuperAdminController {
   deleteUser(@Param("id") id: string) {
     return this.superAdminService.deleteUser(id);
   }
+
+  // ── Notices (Avisos) ────────────────────────────────────
+
+  @Get("parishes/:parishId/notices")
+  listNotices(@Param("parishId") parishId: string) {
+    return this.superAdminService.listNotices(parishId);
+  }
+
+  @Post("parishes/:parishId/notices")
+  createNotice(
+    @Param("parishId") parishId: string,
+    @Body()
+    body: {
+      subject: string;
+      description: string;
+      massTimes: string[];
+      startDate?: string;
+      endDate?: string;
+      isActive: boolean;
+    },
+  ) {
+    return this.superAdminService.createNotice(parishId, body);
+  }
+
+  @Put("notices/:id")
+  updateNotice(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      subject?: string;
+      description?: string;
+      massTimes?: string[];
+      startDate?: string | null;
+      endDate?: string | null;
+      isActive?: boolean;
+    },
+  ) {
+    return this.superAdminService.updateNotice(id, body);
+  }
+
+  @Delete("notices/:id")
+  deleteNotice(@Param("id") id: string) {
+    return this.superAdminService.deleteNotice(id);
+  }
 }
