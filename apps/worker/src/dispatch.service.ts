@@ -237,7 +237,7 @@ export class DispatchService {
         console.error(`[Dispatch] S3 upload failed for ${parish.parishName} ${dateStr} ${timeStr} (continuing without upload):`, s3Error.message);
       }
 
-      // Send email with PDF attachment (non-blocking — batch is saved even if email fails)
+      // Send email with PDF attachment
       const formattedDate = this.formatDateDDMMYYYY(massDate);
       const subject = massTime
         ? `Intenções da Missa - ${parish.parishName} - ${formattedDate} ${massTime}`
@@ -247,6 +247,7 @@ export class DispatchService {
         ? `intencoes_${dateStr.replace(/-/g, '')}_${massTime.replace(':', '')}.pdf`
         : `intencoes_${dateStr.replace(/-/g, '')}_consolidado.pdf`;
 
+      let emailError: string | null = null;
       try {
         await this.emailService.sendDispatchEmail(
           parish.dispatchEmails,
@@ -254,11 +255,13 @@ export class DispatchService {
           pdfBuffer,
           pdfFilename,
         );
-      } catch (emailError: any) {
-        console.error(`[Dispatch] Email send failed for ${parish.parishName} ${dateStr} ${timeStr} (continuing):`, emailError.message);
+      } catch (err: any) {
+        emailError = err.message || 'Unknown email error';
+        console.error(`[Dispatch] Email send failed for ${parish.parishName} ${dateStr} ${timeStr}:`, emailError);
       }
 
-      // Create DispatchBatch record with SENT status
+      // Create DispatchBatch record — SENT only if email succeeded
+      const batchStatus = emailError ? DispatchStatus.FAILED : DispatchStatus.SENT;
       const batch = await this.prisma.dispatchBatch.create({
         data: {
           parishId: parish.id,
@@ -268,7 +271,8 @@ export class DispatchService {
           pdfStorageKey: storageKey,
           sentToEmails: parish.dispatchEmails,
           sentAt: new Date(),
-          status: DispatchStatus.SENT,
+          status: batchStatus,
+          ...(emailError ? { errorMessage: `Email: ${emailError}` } : {}),
         },
       });
 
@@ -284,10 +288,16 @@ export class DispatchService {
         },
       });
 
-      console.log(
-        `[Dispatch] Successfully dispatched batch for ${parish.parishName} ${dateStr} ${timeStr} (${intentions.length} intentions)`,
-      );
-      return { success: true };
+      if (emailError) {
+        console.warn(
+          `[Dispatch] Batch created as FAILED for ${parish.parishName} ${dateStr} ${timeStr} — email failed (${intentions.length} intentions)`,
+        );
+      } else {
+        console.log(
+          `[Dispatch] Successfully dispatched batch for ${parish.parishName} ${dateStr} ${timeStr} (${intentions.length} intentions)`,
+        );
+      }
+      return { success: !emailError };
     } catch (error: any) {
       console.error(`[Dispatch] Error creating batch for ${parish.parishName} ${dateStr} ${timeStr}:`, error);
 
