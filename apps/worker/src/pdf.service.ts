@@ -265,4 +265,106 @@ export class PdfService {
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${day}/${month}/${year} ${hours}:${minutes}`;
   }
+
+  async generatePastorPdf(data: {
+    parishName: string;
+    pastorName: string | null;
+    massDate: string;
+    massTime: string | null;
+    intentions: IntentionItem[];
+  }): Promise<Buffer> {
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 50,
+      bufferPages: true,
+    });
+
+    const passThrough = new PassThrough();
+    const chunks: Buffer[] = [];
+    passThrough.on('data', (chunk: Buffer) => chunks.push(chunk));
+    doc.pipe(passThrough);
+
+    const fontSize = 10;
+    const formattedDate = this.formatDateBR(data.massDate);
+    const dateTimeLine = data.massTime
+      ? `Missa: ${formattedDate} \u00e0s ${data.massTime}`
+      : `Missa: ${formattedDate} (Consolidado)`;
+
+    // Header
+    doc.font('Helvetica-Bold').fontSize(14);
+    doc.text(data.parishName, { align: 'center', width: 495 });
+    doc.moveDown(0.3);
+
+    doc.font('Helvetica-Bold').fontSize(12);
+    doc.text('Resumo de Inten\u00e7\u00f5es para o P\u00e1roco', { align: 'center', width: 495 });
+    doc.moveDown(0.3);
+
+    doc.font('Helvetica').fontSize(fontSize);
+    doc.text(dateTimeLine, { align: 'center', width: 495 });
+    if (data.pastorName) {
+      doc.moveDown(0.2);
+      doc.text(`P\u00e1roco: ${data.pastorName}`, { align: 'center', width: 495 });
+    }
+    doc.moveDown(0.5);
+
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(1).stroke();
+    doc.moveDown(0.5);
+
+    // Group intentions by intentionType.name
+    const byTypeName: Record<string, IntentionItem[]> = {};
+    for (const item of data.intentions) {
+      const typeName = item.intentionType.name;
+      if (!byTypeName[typeName]) byTypeName[typeName] = [];
+      byTypeName[typeName].push(item);
+    }
+
+    // Sort type names: Sufrágio types first (by name), then others
+    const sufragioTypes: string[] = [];
+    const otherTypes: string[] = [];
+    for (const typeName of Object.keys(byTypeName)) {
+      const firstItem = byTypeName[typeName][0];
+      if (firstItem.group === IntentionGroup.SUFRAGIO) {
+        sufragioTypes.push(typeName);
+      } else {
+        otherTypes.push(typeName);
+      }
+    }
+    sufragioTypes.sort();
+    otherTypes.sort();
+
+    const orderedTypes = [...sufragioTypes, ...otherTypes];
+
+    for (const typeName of orderedTypes) {
+      const items = byTypeName[typeName];
+      if (doc.y > 750) break;
+
+      const groupLabel = GROUP_LABELS[items[0].group] || items[0].group;
+
+      doc.font('Helvetica-Bold').fontSize(fontSize);
+      doc.text(`${typeName} (${groupLabel}) \u2014 ${items.length}`, 50, doc.y, { width: 495 });
+      doc.moveDown(0.3);
+
+      doc.font('Helvetica').fontSize(fontSize);
+      for (const item of items) {
+        if (doc.y > 760) break;
+        const bullet = this.formatIntentionBullet(item);
+        doc.text(`  \u2022 ${bullet}`, 60, doc.y, { width: 475 });
+        doc.moveDown(0.15);
+      }
+      doc.moveDown(0.4);
+    }
+
+    // Footer
+    const now = new Date();
+    const spNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    doc.fillColor('gray').font('Helvetica').fontSize(8);
+    doc.text(`Gerado em ${this.formatDateTimeBR(spNow)}`, 50, 790, { align: 'center', width: 495 });
+
+    doc.end();
+
+    return new Promise<Buffer>((resolve, reject) => {
+      passThrough.on('end', () => resolve(Buffer.concat(chunks)));
+      passThrough.on('error', reject);
+    });
+  }
 }

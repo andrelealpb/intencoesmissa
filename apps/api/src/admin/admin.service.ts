@@ -698,26 +698,26 @@ export class AdminService {
       data: { dispatchedAt: new Date(), dispatchBatchId: batch.id },
     });
 
-    // Send pastor summary (separate email with only flagged intention types)
+    // Send pastor summary PDF (separate email with only flagged intention types)
     if (parish.pastorEmail) {
       try {
         const pastorIntentions = pendingIntentions.filter((i) => i.intentionType.sendToPastor);
         if (pastorIntentions.length > 0) {
+          const pastorPdfBuffer = await this.generatePastorPdf(
+            parish.parishName,
+            parish.pastorName,
+            todayStr,
+            massTime,
+            pastorIntentions,
+          );
           const formattedDate3 = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
-          const lines = pastorIntentions.map((i) => {
-            const parts = [i.intentionType.name];
-            if (i.deceasedName) parts.push(i.deceasedName);
-            if (i.familyNames) parts.push(i.familyNames);
-            if (i.complement) parts.push(i.complement);
-            return `- ${parts.join(" - ")}`;
-          });
-          const htmlLines = lines.map((l) => `<li>${l.substring(2)}</li>`).join("");
           const pastorSubject = `Resumo de Intencoes - ${parish.parishName} - ${formattedDate3} ${massTime}`;
+          const pastorFilename = `resumo_paroco_${todayStr.replace(/-/g, "")}_${massTime.replace(":", "")}.pdf`;
           await this.email.sendPastorSummary(
             parish.pastorEmail,
             pastorSubject,
-            `Resumo das intencoes da missa de ${formattedDate3} as ${massTime}:\n\n${lines.join("\n")}`,
-            `<p>Resumo das inten&ccedil;&otilde;es da missa de ${formattedDate3} &agrave;s ${massTime}:</p><ul>${htmlLines}</ul>`,
+            pastorPdfBuffer,
+            pastorFilename,
           );
         }
       } catch (err) {
@@ -730,6 +730,99 @@ export class AdminService {
       dispatched: true,
       intentionCount: pendingIntentions.length,
     };
+  }
+
+  private async generatePastorPdf(
+    parishName: string,
+    pastorName: string | null,
+    dateStr: string,
+    massTime: string,
+    intentions: any[],
+  ): Promise<Buffer> {
+    const PDFDocument = (await import("pdfkit")).default;
+    const { PassThrough } = await import("stream");
+
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const passThrough = new PassThrough();
+    const pdfChunks: Buffer[] = [];
+    passThrough.on("data", (chunk: Buffer) => pdfChunks.push(chunk));
+    doc.pipe(passThrough);
+
+    const fontSize = 10;
+    const formattedDate = `${dateStr.split("-")[2]}/${dateStr.split("-")[1]}/${dateStr.split("-")[0]}`;
+
+    // Header
+    doc.font("Helvetica-Bold").fontSize(14);
+    doc.text(parishName, { align: "center" });
+    doc.moveDown(0.3);
+    doc.font("Helvetica-Bold").fontSize(12);
+    doc.text("Resumo de Intencoes para o Paroco", { align: "center" });
+    doc.moveDown(0.3);
+    doc.font("Helvetica").fontSize(fontSize);
+    doc.text(`Missa: ${formattedDate} as ${massTime}`, { align: "center" });
+    if (pastorName) {
+      doc.moveDown(0.2);
+      doc.text(`Paroco: ${pastorName}`, { align: "center" });
+    }
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(1).stroke();
+    doc.moveDown(0.5);
+
+    // Group by intention type name
+    const byTypeName: Record<string, any[]> = {};
+    for (const item of intentions) {
+      const typeName = item.intentionType.name;
+      if (!byTypeName[typeName]) byTypeName[typeName] = [];
+      byTypeName[typeName].push(item);
+    }
+
+    // Sort: SUFRAGIO types first, then others
+    const sufragioTypes: string[] = [];
+    const otherTypes: string[] = [];
+    for (const typeName of Object.keys(byTypeName)) {
+      const firstItem = byTypeName[typeName][0];
+      if (firstItem.group === "SUFRAGIO") {
+        sufragioTypes.push(typeName);
+      } else {
+        otherTypes.push(typeName);
+      }
+    }
+    sufragioTypes.sort();
+    otherTypes.sort();
+
+    const GROUP_LABELS: Record<string, string> = {
+      SUFRAGIO: "Sufragio",
+      SUPLICAS: "Suplicas",
+      ACAO_DE_GRACAS: "Acao de Gracas",
+    };
+
+    for (const typeName of [...sufragioTypes, ...otherTypes]) {
+      const items = byTypeName[typeName];
+      if (doc.y > 750) break;
+
+      const groupLabel = GROUP_LABELS[items[0].group] || items[0].group;
+      doc.font("Helvetica-Bold").fontSize(fontSize);
+      doc.text(`${typeName} (${groupLabel}) - ${items.length}`, 50, doc.y, { width: 495 });
+      doc.moveDown(0.3);
+
+      doc.font("Helvetica").fontSize(fontSize);
+      for (const item of items) {
+        if (doc.y > 760) break;
+        const parts = [item.intentionType.name];
+        if (item.deceasedName) parts.push(item.deceasedName);
+        if (item.familyNames) parts.push(item.familyNames);
+        if (item.complement) parts.push(item.complement);
+        doc.text(`  • ${parts.join(" - ")}`, 60, doc.y, { width: 475 });
+        doc.moveDown(0.15);
+      }
+      doc.moveDown(0.4);
+    }
+
+    doc.end();
+    return new Promise<Buffer>((resolve, reject) => {
+      passThrough.on("end", () => resolve(Buffer.concat(pdfChunks)));
+      passThrough.on("error", reject);
+    });
   }
 
   // ── Dashboard ──────────────────────────────────────────

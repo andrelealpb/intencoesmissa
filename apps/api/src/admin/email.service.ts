@@ -82,8 +82,8 @@ export class EmailService {
   async sendPastorSummary(
     to: string,
     subject: string,
-    textContent: string,
-    htmlContent: string,
+    pdfBuffer: Buffer,
+    pdfFilename: string,
   ): Promise<void> {
     if (!this.apiKey) {
       this.logger.warn(`E-mail desabilitado, ignorando resumo para paroco: ${to}`);
@@ -96,8 +96,18 @@ export class EmailService {
       sender: { name: this.fromName, email: this.fromEmail },
       to: [{ email: to }],
       subject,
-      textContent,
-      htmlContent,
+      textContent: "Segue em anexo o resumo das intencoes da Santa Missa.",
+      htmlContent: `
+        <p>Prezado P&aacute;roco,</p>
+        <p>Segue em anexo o resumo das inten&ccedil;&otilde;es da Santa Missa.</p>
+        <p>Este &eacute; um envio autom&aacute;tico. Por favor, n&atilde;o responda a este e-mail.</p>
+      `,
+      attachment: [
+        {
+          name: pdfFilename,
+          content: pdfBuffer.toString("base64"),
+        },
+      ],
     };
 
     const response = await fetch("https://api.brevo.com/v3/smtp/email", {
