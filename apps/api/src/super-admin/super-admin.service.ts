@@ -81,6 +81,7 @@ export class SuperAdminService {
       cnpj?: string;
       legalName?: string;
       pastorName?: string;
+      pastorEmail?: string;
       dispatchEmails?: string[];
     },
   ) {

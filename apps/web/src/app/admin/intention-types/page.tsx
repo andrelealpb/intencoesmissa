@@ -19,6 +19,7 @@ interface IntentionType {
   requiresFamilyNames: boolean;
   opensOptionalNotes: boolean;
   requiresComplement: boolean;
+  sendToPastor: boolean;
 }
 
 const emptyForm = {
@@ -29,6 +30,7 @@ const emptyForm = {
   requiresFamilyNames: false,
   opensOptionalNotes: false,
   requiresComplement: false,
+  sendToPastor: false,
 };
 
 export default function IntentionTypesPage() {
@@ -77,6 +79,7 @@ export default function IntentionTypesPage() {
       requiresFamilyNames: t.requiresFamilyNames,
       opensOptionalNotes: t.opensOptionalNotes,
       requiresComplement: t.requiresComplement,
+      sendToPastor: t.sendToPastor,
     });
     setEditing(t.id);
     setShowForm(true);
@@ -125,6 +128,7 @@ export default function IntentionTypesPage() {
               <th className="text-center p-3">Famílias</th>
               <th className="text-center p-3">Obs.</th>
               <th className="text-center p-3">Complemento</th>
+              <th className="text-center p-3">Pároco</th>
               <th className="text-center p-3">Ativo</th>
               <th className="text-right p-3">Ações</th>
             </tr>
@@ -138,6 +142,7 @@ export default function IntentionTypesPage() {
                 <td className="p-3 text-center">{t.requiresFamilyNames ? '✓' : ''}</td>
                 <td className="p-3 text-center">{t.opensOptionalNotes ? '✓' : ''}</td>
                 <td className="p-3 text-center">{t.requiresComplement ? '✓' : ''}</td>
+                <td className="p-3 text-center">{t.sendToPastor ? '✓' : ''}</td>
                 <td className="p-3 text-center">{t.isActive ? '✓' : '✗'}</td>
                 <td className="p-3 text-right space-x-2">
                   <button onClick={() => handleEdit(t)} className="text-blue-600 text-xs hover:underline">Editar</button>
@@ -170,6 +175,7 @@ export default function IntentionTypesPage() {
                 { key: 'requiresFamilyNames', label: 'Exige nomes das famílias' },
                 { key: 'opensOptionalNotes', label: 'Permite observações' },
                 { key: 'requiresComplement', label: 'Exige complemento' },
+                { key: 'sendToPastor', label: 'Enviar resumo ao pároco' },
               ].map(({ key, label }) => (
                 <label key={key} className="flex items-center gap-2 text-sm">
                   <input

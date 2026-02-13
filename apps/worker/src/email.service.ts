@@ -65,4 +65,43 @@ export class EmailService {
     const messageId = result.messageId || 'N/A';
     console.log(`[Email] E-mail enviado com sucesso. messageId=${messageId}`);
   }
+
+  async sendPastorSummary(
+    to: string,
+    subject: string,
+    textContent: string,
+    htmlContent: string,
+  ): Promise<void> {
+    if (!this.apiKey) {
+      console.warn(`[Email] E-mail desabilitado, ignorando resumo para paroco: ${to}`);
+      return;
+    }
+
+    console.log(`[Email] Enviando resumo ao paroco: to=${to} subject="${subject}"`);
+
+    const body = {
+      sender: { name: this.fromName, email: this.fromEmail },
+      to: [{ email: to }],
+      subject,
+      textContent,
+      htmlContent,
+    };
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': this.apiKey,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Brevo API ${response.status}: ${errorText}`);
+    }
+
+    console.log(`[Email] Resumo ao paroco enviado com sucesso.`);
+  }
 }

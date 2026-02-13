@@ -50,6 +50,7 @@ model Parish {
   legalName       String?  @map("legal_name")
   parishName      String   @map("parish_name")
   pastorName      String?  @map("pastor_name")
+  pastorEmail     String?  @map("pastor_email")
   addressJson     Json?    @map("address_json") @db.JsonB
   phonesJson      Json?    @map("phones_json") @db.JsonB
   dispatchEmails  String[] @map("dispatch_emails")
@@ -146,6 +147,7 @@ model IntentionType {
   requiresFamilyNames  Boolean       @default(false) @map("requires_family_names")
   opensOptionalNotes   Boolean       @default(false) @map("opens_optional_notes")
   requiresComplement   Boolean       @default(false) @map("requires_complement")
+  sendToPastor         Boolean       @default(false) @map("send_to_pastor")
 
   parish             Parish              @relation(fields: [parishId], references: [id], onDelete: Cascade)
   emoluments         Emolument[]

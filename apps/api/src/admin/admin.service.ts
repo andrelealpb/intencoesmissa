@@ -58,6 +58,7 @@ export class AdminService {
         legalName: data.legalName,
         parishName: data.parishName,
         pastorName: data.pastorName,
+        pastorEmail: data.pastorEmail || null,
         dispatchEmails: data.dispatchEmails,
         pixKey: data.pixKey,
       },
@@ -696,6 +697,33 @@ export class AdminService {
       where: { id: { in: intentionIds } },
       data: { dispatchedAt: new Date(), dispatchBatchId: batch.id },
     });
+
+    // Send pastor summary (separate email with only flagged intention types)
+    if (parish.pastorEmail) {
+      try {
+        const pastorIntentions = pendingIntentions.filter((i) => i.intentionType.sendToPastor);
+        if (pastorIntentions.length > 0) {
+          const formattedDate3 = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
+          const lines = pastorIntentions.map((i) => {
+            const parts = [i.intentionType.name];
+            if (i.deceasedName) parts.push(i.deceasedName);
+            if (i.familyNames) parts.push(i.familyNames);
+            if (i.complement) parts.push(i.complement);
+            return `- ${parts.join(" - ")}`;
+          });
+          const htmlLines = lines.map((l) => `<li>${l.substring(2)}</li>`).join("");
+          const pastorSubject = `Resumo de Intencoes - ${parish.parishName} - ${formattedDate3} ${massTime}`;
+          await this.email.sendPastorSummary(
+            parish.pastorEmail,
+            pastorSubject,
+            `Resumo das intencoes da missa de ${formattedDate3} as ${massTime}:\n\n${lines.join("\n")}`,
+            `<p>Resumo das inten&ccedil;&otilde;es da missa de ${formattedDate3} &agrave;s ${massTime}:</p><ul>${htmlLines}</ul>`,
+          );
+        }
+      } catch (err) {
+        this.logger.error("Erro ao enviar resumo ao paroco", err);
+      }
+    }
 
     return {
       message: `Despacho realizado! ${pendingIntentions.length} intencao(oes) enviada(s).`,

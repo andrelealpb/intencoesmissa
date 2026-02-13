@@ -11,6 +11,7 @@ interface Parish {
   legalName?: string;
   cnpj?: string;
   pastorName?: string;
+  pastorEmail?: string;
   dispatchEmails: string[];
   logoUrl?: string;
   pixKey?: string;
@@ -44,6 +45,7 @@ export default function ParishPage() {
           legalName: parish.legalName,
           cnpj: parish.cnpj,
           pastorName: parish.pastorName,
+          pastorEmail: parish.pastorEmail,
           dispatchEmails: parish.dispatchEmails,
           pixKey: parish.pixKey,
         }),
@@ -169,13 +171,26 @@ export default function ParishPage() {
             />
           </div>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Pároco</label>
-          <input
-            className="w-full border rounded-md px-3 py-2 text-sm"
-            value={parish.pastorName ?? ''}
-            onChange={(e) => setParish({ ...parish, pastorName: e.target.value })}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Pároco</label>
+            <input
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              value={parish.pastorName ?? ''}
+              onChange={(e) => setParish({ ...parish, pastorName: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">E-mail do Pároco</label>
+            <input
+              className="w-full border rounded-md px-3 py-2 text-sm"
+              type="email"
+              placeholder="paroco@email.com"
+              value={parish.pastorEmail ?? ''}
+              onChange={(e) => setParish({ ...parish, pastorEmail: e.target.value })}
+            />
+            <p className="text-xs text-gray-500 mt-1">Recebe resumo das intencoes marcadas no tipo de intencao.</p>
+          </div>
         </div>
 
         {/* Logo */}

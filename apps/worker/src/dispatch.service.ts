@@ -288,6 +288,32 @@ export class DispatchService {
         },
       });
 
+      // Send pastor summary (separate email with only flagged intention types)
+      if (parish.pastorEmail && !emailError) {
+        try {
+          const pastorIntentions = intentions.filter((i: any) => i.intentionType.sendToPastor);
+          if (pastorIntentions.length > 0) {
+            const lines = pastorIntentions.map((i: any) => {
+              const parts = [i.intentionType.name];
+              if (i.deceasedName) parts.push(i.deceasedName);
+              if (i.familyNames) parts.push(i.familyNames);
+              if (i.complement) parts.push(i.complement);
+              return `- ${parts.join(' - ')}`;
+            });
+            const htmlLines = lines.map((l: string) => `<li>${l.substring(2)}</li>`).join('');
+            const pastorSubject = `Resumo de Intencoes - ${parish.parishName} - ${formattedDate} ${massTime || 'Consolidado'}`;
+            await this.emailService.sendPastorSummary(
+              parish.pastorEmail,
+              pastorSubject,
+              `Resumo das intencoes da missa de ${formattedDate} as ${massTime || 'Consolidado'}:\n\n${lines.join('\n')}`,
+              `<p>Resumo das inten&ccedil;&otilde;es da missa de ${formattedDate} &agrave;s ${massTime || 'Consolidado'}:</p><ul>${htmlLines}</ul>`,
+            );
+          }
+        } catch (pastorErr: any) {
+          console.error(`[Dispatch] Erro ao enviar resumo ao paroco:`, pastorErr.message);
+        }
+      }
+
       if (emailError) {
         console.warn(
           `[Dispatch] Batch created as FAILED for ${parish.parishName} ${dateStr} ${timeStr} — email failed (${intentions.length} intentions)`,

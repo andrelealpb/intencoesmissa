@@ -70,12 +70,51 @@ export class EmailService {
         throw new Error(`Brevo API ${response.status}: ${errorText}`);
       }
 
-      const result = await response.json();
+      const result = (await response.json()) as { messageId?: string };
       const messageId = result.messageId || "N/A";
       this.logger.log(`E-mail enviado com sucesso. messageId=${messageId}`);
     } catch (err: any) {
       this.logger.error(`Falha ao enviar e-mail: ${err.message}`, err.stack);
       throw err;
     }
+  }
+
+  async sendPastorSummary(
+    to: string,
+    subject: string,
+    textContent: string,
+    htmlContent: string,
+  ): Promise<void> {
+    if (!this.apiKey) {
+      this.logger.warn(`E-mail desabilitado, ignorando resumo para paroco: ${to}`);
+      return;
+    }
+
+    this.logger.log(`Enviando resumo ao paroco: to=${to} subject="${subject}"`);
+
+    const body = {
+      sender: { name: this.fromName, email: this.fromEmail },
+      to: [{ email: to }],
+      subject,
+      textContent,
+      htmlContent,
+    };
+
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": this.apiKey,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Brevo API ${response.status}: ${errorText}`);
+    }
+
+    this.logger.log(`Resumo ao paroco enviado com sucesso.`);
   }
 }

@@ -72,6 +72,7 @@ export const intentionTypeSchema = z.object({
   requiresFamilyNames: z.boolean(),
   opensOptionalNotes: z.boolean(),
   requiresComplement: z.boolean(),
+  sendToPastor: z.boolean(),
 });
 
 // ---------------------------------------------------------------------------
@@ -121,6 +122,7 @@ export const parishProfileSchema = z.object({
   legalName: z.string().nullish(),
   parishName: z.string().min(1, "Nome da paroquia e obrigatorio"),
   pastorName: z.string().nullish(),
+  pastorEmail: z.string().email("E-mail do paroco invalido").nullish().or(z.literal("")),
   dispatchEmails: z.array(z.string().email("E-mail invalido")),
   pixKey: z.string().nullish(),
 });
