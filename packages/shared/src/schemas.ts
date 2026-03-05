@@ -127,6 +127,7 @@ export const parishProfileSchema = z.object({
   pixKey: z.string().nullish(),
   zapiInstanceId: z.string().nullish(),
   zapiToken: z.string().nullish(),
+  zapiClientToken: z.string().nullish(),
   zapiPhone: z.string().nullish(),
   pastorPhone: z.string().nullish(),
   dispatchPhones: z.array(z.string()).optional(),

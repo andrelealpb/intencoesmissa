@@ -63,6 +63,7 @@ model Parish {
   pixQrCodeStorageKey String? @map("pix_qr_code_storage_key")
   zapiInstanceId  String?  @map("zapi_instance_id")
   zapiToken       String?  @map("zapi_token")
+  zapiClientToken String?  @map("zapi_client_token")
   zapiPhone       String?  @map("zapi_phone")
   pastorPhone     String?  @map("pastor_phone")
   createdAt       DateTime @default(now()) @map("created_at")

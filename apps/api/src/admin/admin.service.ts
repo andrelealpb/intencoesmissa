@@ -70,6 +70,7 @@ export class AdminService {
         pixKey: data.pixKey,
         zapiInstanceId: data.zapiInstanceId || null,
         zapiToken: data.zapiToken || null,
+        zapiClientToken: data.zapiClientToken || null,
         zapiPhone: data.zapiPhone || null,
         pastorPhone: data.pastorPhone || null,
         dispatchPhones: phones.length > 0 ? phones : (data.dispatchPhones || []),
@@ -750,6 +751,7 @@ export class AdminService {
           await this.whatsapp.sendDocument(
             parish.zapiInstanceId, parish.zapiToken,
             phone, pdfBuffer, whatsappFilename, captionWp,
+            parish.zapiClientToken,
           );
         } catch (err) {
           this.logger.error(`WhatsApp falhou para ${phone}`, err);
@@ -769,6 +771,7 @@ export class AdminService {
               parish.zapiInstanceId, parish.zapiToken,
               parish.pastorPhone, pastorPdfWp, pastorWpFilename,
               `Resumo de Intenções - ${formattedDateWp} ${massTime}`,
+              parish.zapiClientToken,
             );
           }
         } catch (err) {
@@ -882,7 +885,7 @@ export class AdminService {
   async getWhatsappStatus(parishId: string) {
     const parish = await this.prisma.parish.findUnique({
       where: { id: parishId },
-      select: { zapiInstanceId: true, zapiToken: true, zapiPhone: true },
+      select: { zapiInstanceId: true, zapiToken: true, zapiClientToken: true, zapiPhone: true },
     });
 
     if (!parish?.zapiInstanceId || !parish?.zapiToken) {
@@ -890,7 +893,7 @@ export class AdminService {
     }
 
     try {
-      const status = await this.whatsapp.getStatus(parish.zapiInstanceId, parish.zapiToken);
+      const status = await this.whatsapp.getStatus(parish.zapiInstanceId, parish.zapiToken, parish.zapiClientToken);
       return { configured: true, ...status };
     } catch (err: any) {
       return { configured: true, connected: false, error: err.message };

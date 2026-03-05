@@ -27,6 +27,7 @@ interface Parish {
   pixQrCodeUrl?: string;
   zapiInstanceId?: string;
   zapiToken?: string;
+  zapiClientToken?: string;
   zapiPhone?: string;
 }
 
@@ -39,6 +40,7 @@ export default function ParishPage() {
   const [newRecipient, setNewRecipient] = useState<Recipient>({ name: '', email: '', phone: '' });
   const [zapiInstanceId, setZapiInstanceId] = useState('');
   const [zapiToken, setZapiToken] = useState('');
+  const [zapiClientToken, setZapiClientToken] = useState('');
   const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean } | null>(null);
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export default function ParishPage() {
         setParish(data);
         setZapiInstanceId(data.zapiInstanceId || '');
         setZapiToken(data.zapiToken || '');
+        setZapiClientToken(data.zapiClientToken || '');
         // Initialize recipients from dispatchRecipients or build from legacy arrays
         if (data.dispatchRecipients && data.dispatchRecipients.length > 0) {
           setRecipients(data.dispatchRecipients);
@@ -91,6 +94,7 @@ export default function ParishPage() {
           pixKey: parish.pixKey,
           zapiInstanceId: zapiInstanceId || null,
           zapiToken: zapiToken || null,
+          zapiClientToken: zapiClientToken || null,
           zapiPhone: parish.zapiPhone,
         }),
       });
@@ -411,14 +415,14 @@ export default function ParishPage() {
         <div className="border-t pt-4 mt-4">
           <h3 className="text-sm font-semibold text-gray-800 mb-3">WhatsApp (Z-API)</h3>
           <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Instance ID</label>
                 <input
                   className="w-full border rounded-md px-3 py-2 text-sm"
                   value={zapiInstanceId}
                   onChange={(e) => setZapiInstanceId(e.target.value)}
-                  placeholder="ID da instancia Z-API"
+                  placeholder="ID da instancia"
                 />
               </div>
               <div>
@@ -428,6 +432,15 @@ export default function ParishPage() {
                   value={zapiToken}
                   onChange={(e) => setZapiToken(e.target.value)}
                   placeholder="Token da instancia"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Client-Token</label>
+                <input
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={zapiClientToken}
+                  onChange={(e) => setZapiClientToken(e.target.value)}
+                  placeholder="Token de seguranca da conta"
                 />
               </div>
             </div>

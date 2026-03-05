@@ -327,6 +327,7 @@ export class DispatchService {
             await this.whatsappService.sendDocument(
               parish.zapiInstanceId, parish.zapiToken,
               phone, pdfBuffer, whatsappFilename, caption,
+              parish.zapiClientToken,
             );
           } catch (wpErr: any) {
             console.error(`[Dispatch] WhatsApp falhou para ${phone}:`, wpErr.message);
@@ -350,6 +351,7 @@ export class DispatchService {
                 parish.zapiInstanceId, parish.zapiToken,
                 parish.pastorPhone, pastorPdfWp, pastorWpFilename,
                 `Resumo de Intenções - ${formattedDate} ${massTime || 'Consolidado'}`,
+                parish.zapiClientToken,
               );
             }
           } catch (wpErr: any) {

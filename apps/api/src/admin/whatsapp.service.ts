@@ -3,12 +3,11 @@ import { Injectable, Logger } from "@nestjs/common";
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
-  private readonly clientToken = process.env.ZAPI_CLIENT_TOKEN || "";
 
-  private getHeaders(): Record<string, string> {
+  private getHeaders(clientToken?: string | null): Record<string, string> {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (this.clientToken) {
-      headers["Client-Token"] = this.clientToken;
+    if (clientToken) {
+      headers["Client-Token"] = clientToken;
     }
     return headers;
   }
@@ -23,6 +22,7 @@ export class WhatsappService {
     pdfBuffer: Buffer,
     fileName: string,
     caption?: string,
+    clientToken?: string | null,
   ): Promise<void> {
     const base64 = pdfBuffer.toString("base64");
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-document/pdf`;
@@ -38,7 +38,7 @@ export class WhatsappService {
 
     const response = await fetch(url, {
       method: "POST",
-      headers: this.getHeaders(),
+      headers: this.getHeaders(clientToken),
       body: JSON.stringify(body),
     });
 
@@ -58,6 +58,7 @@ export class WhatsappService {
     token: string,
     phone: string,
     message: string,
+    clientToken?: string | null,
   ): Promise<void> {
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/send-text`;
 
@@ -70,7 +71,7 @@ export class WhatsappService {
 
     const response = await fetch(url, {
       method: "POST",
-      headers: this.getHeaders(),
+      headers: this.getHeaders(clientToken),
       body: JSON.stringify(body),
     });
 
@@ -88,12 +89,13 @@ export class WhatsappService {
   async getStatus(
     instanceId: string,
     token: string,
+    clientToken?: string | null,
   ): Promise<{ connected: boolean; phone?: string }> {
     const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/status`;
 
     const response = await fetch(url, {
       method: "GET",
-      headers: this.getHeaders(),
+      headers: this.getHeaders(clientToken),
     });
 
     if (!response.ok) {
