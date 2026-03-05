@@ -317,6 +317,7 @@ export class DispatchService {
       }
 
       // Send WhatsApp messages via Z-API (non-blocking)
+      const sentToPhones: string[] = [];
       if (parish.zapiInstanceId && parish.zapiToken) {
         const caption = `Intenções da Missa - ${parish.parishName} - ${formattedDate} ${massTime || 'Consolidado'}`;
         const whatsappFilename = `intencoes_${dateStr.replace(/-/g, '')}_${timeStr}.pdf`;
@@ -329,6 +330,7 @@ export class DispatchService {
               phone, pdfBuffer, whatsappFilename, caption,
               parish.zapiClientToken,
             );
+            sentToPhones.push(phone);
           } catch (wpErr: any) {
             console.error(`[Dispatch] WhatsApp falhou para ${phone}:`, wpErr.message);
           }
@@ -353,10 +355,18 @@ export class DispatchService {
                 `Resumo de Intenções - ${formattedDate} ${massTime || 'Consolidado'}`,
                 parish.zapiClientToken,
               );
+              sentToPhones.push(parish.pastorPhone);
             }
           } catch (wpErr: any) {
             console.error(`[Dispatch] WhatsApp resumo paroco falhou:`, wpErr.message);
           }
+        }
+
+        if (sentToPhones.length > 0) {
+          await this.prisma.dispatchBatch.update({
+            where: { id: batch.id },
+            data: { sentToPhones },
+          });
         }
       }
 

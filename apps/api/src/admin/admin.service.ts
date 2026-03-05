@@ -740,6 +740,7 @@ export class AdminService {
     }
 
     // Send WhatsApp messages via Z-API (non-blocking)
+    const sentToPhones: string[] = [];
     if (parish.zapiInstanceId && parish.zapiToken) {
       const formattedDateWp = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
       const captionWp = `Intenções da Missa - ${parish.parishName} - ${formattedDateWp} ${massTime}`;
@@ -753,6 +754,7 @@ export class AdminService {
             phone, pdfBuffer, whatsappFilename, captionWp,
             parish.zapiClientToken,
           );
+          sentToPhones.push(phone);
         } catch (err) {
           this.logger.error(`WhatsApp falhou para ${phone}`, err);
         }
@@ -773,10 +775,18 @@ export class AdminService {
               `Resumo de Intenções - ${formattedDateWp} ${massTime}`,
               parish.zapiClientToken,
             );
+            sentToPhones.push(parish.pastorPhone);
           }
         } catch (err) {
           this.logger.error("WhatsApp resumo paroco falhou", err);
         }
+      }
+
+      if (sentToPhones.length > 0) {
+        await this.prisma.dispatchBatch.update({
+          where: { id: batch.id },
+          data: { sentToPhones },
+        });
       }
     }
 
@@ -894,6 +904,12 @@ export class AdminService {
 
     try {
       const status = await this.whatsapp.getStatus(parish.zapiInstanceId, parish.zapiToken, parish.zapiClientToken);
+      if (status.connected && status.phone && status.phone !== parish.zapiPhone) {
+        await this.prisma.parish.update({
+          where: { id: parishId },
+          data: { zapiPhone: status.phone },
+        });
+      }
       return { configured: true, ...status };
     } catch (err: any) {
       return { configured: true, connected: false, error: err.message };

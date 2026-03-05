@@ -12,6 +12,7 @@ interface Dispatch {
   status: string;
   sentAt: string;
   sentToEmails: string[];
+  sentToPhones: string[];
   pdfStorageKey?: string;
   errorMessage?: string;
   _count: { intentions: number };
@@ -32,6 +33,7 @@ interface DispatchDetail {
   status: string;
   sentAt: string;
   sentToEmails: string[];
+  sentToPhones: string[];
   errorMessage?: string;
   intentions: {
     id: string;
@@ -239,7 +241,10 @@ export default function DispatchesPage() {
               <p><strong>Data:</strong> {new Date(detail.massDate).toLocaleDateString('pt-BR')}</p>
               <p><strong>Horario:</strong> {detail.massTime ?? 'Consolidado'}</p>
               <p><strong>Enviado em:</strong> {new Date(detail.sentAt).toLocaleString('pt-BR')}</p>
-              <p><strong>Emails:</strong> {detail.sentToEmails.join(', ')}</p>
+              <p><strong>Emails:</strong> {detail.sentToEmails.join(', ') || 'Nenhum'}</p>
+              {detail.sentToPhones && detail.sentToPhones.length > 0 && (
+                <p><strong>WhatsApp:</strong> {detail.sentToPhones.join(', ')}</p>
+              )}
               <p><strong>Total intencoes:</strong> {detail.intentions.length}</p>
               {detail.status === 'FAILED' && detail.errorMessage && (
                 <div className="bg-red-50 border border-red-200 rounded p-2 mt-2">
@@ -292,6 +297,7 @@ export default function DispatchesPage() {
               <th className="text-left p-3">Data</th>
               <th className="text-left p-3">Horario</th>
               <th className="text-center p-3">Status</th>
+              <th className="text-center p-3">Canais</th>
               <th className="text-center p-3">Intencoes</th>
               <th className="text-left p-3">Enviado em</th>
               <th className="text-right p-3">Acoes</th>
@@ -311,6 +317,20 @@ export default function DispatchesPage() {
                       {d.errorMessage}
                     </p>
                   )}
+                </td>
+                <td className="p-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5">
+                    {d.sentToEmails.length > 0 && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700" title={`Email: ${d.sentToEmails.join(', ')}`}>
+                        Email
+                      </span>
+                    )}
+                    {d.sentToPhones && d.sentToPhones.length > 0 && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700" title={`WhatsApp: ${d.sentToPhones.join(', ')}`}>
+                        WhatsApp
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="p-3 text-center">{d._count.intentions}</td>
                 <td className="p-3 text-gray-500">{new Date(d.sentAt).toLocaleString('pt-BR')}</td>

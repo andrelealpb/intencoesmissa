@@ -41,16 +41,37 @@ export default function ParishPage() {
   const [zapiInstanceId, setZapiInstanceId] = useState('');
   const [zapiToken, setZapiToken] = useState('');
   const [zapiClientToken, setZapiClientToken] = useState('');
-  const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean } | null>(null);
+  const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean; phone?: string; error?: string } | null>(null);
+  const [zapiChecking, setZapiChecking] = useState(false);
+
+  const checkZapiStatus = async (accessToken: string) => {
+    setZapiChecking(true);
+    try {
+      const status = await apiAuthFetch('/admin/whatsapp/status', accessToken);
+      setZapiStatus(status);
+      if (status.phone) {
+        setParish((prev) => prev ? { ...prev, zapiPhone: status.phone } : prev);
+      }
+    } catch (err: any) {
+      setZapiStatus({ configured: false, connected: false, error: err.message });
+    } finally {
+      setZapiChecking(false);
+    }
+  };
 
   useEffect(() => {
     if (!session?.accessToken) return;
-    apiAuthFetch('/admin/parish/profile', session.accessToken as string)
+    const token = session.accessToken as string;
+    apiAuthFetch('/admin/parish/profile', token)
       .then((data: Parish) => {
         setParish(data);
         setZapiInstanceId(data.zapiInstanceId || '');
         setZapiToken(data.zapiToken || '');
         setZapiClientToken(data.zapiClientToken || '');
+        // Auto-check WhatsApp status if configured
+        if (data.zapiInstanceId && data.zapiToken) {
+          checkZapiStatus(token);
+        }
         // Initialize recipients from dispatchRecipients or build from legacy arrays
         if (data.dispatchRecipients && data.dispatchRecipients.length > 0) {
           setRecipients(data.dispatchRecipients);
@@ -118,16 +139,6 @@ export default function ParishPage() {
 
   const updateRecipient = (index: number, field: keyof Recipient, value: string) => {
     setRecipients((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
-  };
-
-  const checkZapiStatus = async () => {
-    if (!session?.accessToken) return;
-    try {
-      const status = await apiAuthFetch('/admin/whatsapp/status', session.accessToken as string);
-      setZapiStatus(status);
-    } catch {
-      setZapiStatus({ configured: false, connected: false });
-    }
   };
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -444,13 +455,23 @@ export default function ParishPage() {
                 />
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Numero Conectado</label>
+              <input
+                className="w-full border rounded-md px-3 py-2 text-sm bg-gray-100 text-gray-500"
+                value={parish.zapiPhone || (zapiStatus?.phone) || ''}
+                readOnly
+                placeholder="Sera preenchido automaticamente ao conectar"
+              />
+            </div>
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={checkZapiStatus}
-                className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700"
+                onClick={() => session?.accessToken && checkZapiStatus(session.accessToken as string)}
+                disabled={zapiChecking}
+                className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700 disabled:opacity-50"
               >
-                Testar Conexao
+                {zapiChecking ? 'Verificando...' : 'Testar Conexao'}
               </button>
               {zapiStatus && (
                 <span className={`text-sm font-medium ${zapiStatus.connected ? 'text-green-600' : 'text-red-600'}`}>
@@ -458,6 +479,16 @@ export default function ParishPage() {
                 </span>
               )}
             </div>
+            {zapiStatus && !zapiStatus.connected && zapiStatus.configured && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-sm text-red-700 font-medium">Problema na conexao com Z-API</p>
+                <p className="text-xs text-red-600 mt-1">
+                  {zapiStatus.error
+                    ? zapiStatus.error
+                    : 'O WhatsApp nao esta conectado. Verifique no painel da Z-API se o QR Code foi escaneado e a instancia esta ativa.'}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

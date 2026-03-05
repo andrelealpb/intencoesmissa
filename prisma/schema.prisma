@@ -235,6 +235,7 @@ model DispatchBatch {
   pdfStorageKey  String         @map("pdf_storage_key")
   pdfUrl         String?        @map("pdf_url")
   sentToEmails   String[]       @map("sent_to_emails")
+  sentToPhones   String[]       @map("sent_to_phones")
   sentAt         DateTime       @map("sent_at")
   status         DispatchStatus
   errorMessage   String?        @map("error_message")
