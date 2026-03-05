@@ -316,6 +316,48 @@ export class DispatchService {
         }
       }
 
+      // Send WhatsApp messages via Z-API (non-blocking)
+      if (parish.zapiInstanceId && parish.zapiToken) {
+        const caption = `Intenções da Missa - ${parish.parishName} - ${formattedDate} ${massTime || 'Consolidado'}`;
+        const whatsappFilename = `intencoes_${dateStr.replace(/-/g, '')}_${timeStr}.pdf`;
+
+        // Send to dispatch phones
+        for (const phone of (parish.dispatchPhones || [])) {
+          try {
+            await this.whatsappService.sendDocument(
+              parish.zapiInstanceId, parish.zapiToken,
+              phone, pdfBuffer, whatsappFilename, caption,
+            );
+          } catch (wpErr: any) {
+            console.error(`[Dispatch] WhatsApp falhou para ${phone}:`, wpErr.message);
+          }
+        }
+
+        // Send pastor summary via WhatsApp
+        if (parish.pastorPhone) {
+          try {
+            const pastorIntentionsWp = intentions.filter((i: any) => i.intentionType.sendToPastor);
+            if (pastorIntentionsWp.length > 0) {
+              const pastorPdfWp = await this.pdfService.generatePastorPdf({
+                parishName: parish.parishName,
+                pastorName: parish.pastorName,
+                massDate: dateStr,
+                massTime: massTime,
+                intentions: pastorIntentionsWp,
+              });
+              const pastorWpFilename = `resumo_paroco_${dateStr.replace(/-/g, '')}_${timeStr}.pdf`;
+              await this.whatsappService.sendDocument(
+                parish.zapiInstanceId, parish.zapiToken,
+                parish.pastorPhone, pastorPdfWp, pastorWpFilename,
+                `Resumo de Intenções - ${formattedDate} ${massTime || 'Consolidado'}`,
+              );
+            }
+          } catch (wpErr: any) {
+            console.error(`[Dispatch] WhatsApp resumo paroco falhou:`, wpErr.message);
+          }
+        }
+      }
+
       if (emailError) {
         console.warn(
           `[Dispatch] Batch created as FAILED for ${parish.parishName} ${dateStr} ${timeStr} — email failed (${intentions.length} intentions)`,

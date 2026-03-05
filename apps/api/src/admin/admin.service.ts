@@ -732,6 +732,45 @@ export class AdminService {
       }
     }
 
+    // Send WhatsApp messages via Z-API (non-blocking)
+    if (parish.zapiInstanceId && parish.zapiToken) {
+      const formattedDateWp = `${todayStr.split("-")[2]}/${todayStr.split("-")[1]}/${todayStr.split("-")[0]}`;
+      const captionWp = `Intenções da Missa - ${parish.parishName} - ${formattedDateWp} ${massTime}`;
+      const whatsappFilename = `intencoes_${todayStr.replace(/-/g, "")}_${massTime.replace(":", "")}.pdf`;
+
+      // Send to dispatch phones
+      for (const phone of (parish.dispatchPhones || [])) {
+        try {
+          await this.whatsapp.sendDocument(
+            parish.zapiInstanceId, parish.zapiToken,
+            phone, pdfBuffer, whatsappFilename, captionWp,
+          );
+        } catch (err) {
+          this.logger.error(`WhatsApp falhou para ${phone}`, err);
+        }
+      }
+
+      // Send pastor summary via WhatsApp
+      if (parish.pastorPhone) {
+        try {
+          const pastorIntentionsWp = pendingIntentions.filter((i) => i.intentionType.sendToPastor);
+          if (pastorIntentionsWp.length > 0) {
+            const pastorPdfWp = await this.generatePastorPdf(
+              parish.parishName, parish.pastorName, todayStr, massTime, pastorIntentionsWp,
+            );
+            const pastorWpFilename = `resumo_paroco_${todayStr.replace(/-/g, "")}_${massTime.replace(":", "")}.pdf`;
+            await this.whatsapp.sendDocument(
+              parish.zapiInstanceId, parish.zapiToken,
+              parish.pastorPhone, pastorPdfWp, pastorWpFilename,
+              `Resumo de Intenções - ${formattedDateWp} ${massTime}`,
+            );
+          }
+        } catch (err) {
+          this.logger.error("WhatsApp resumo paroco falhou", err);
+        }
+      }
+    }
+
     return {
       message: `Despacho realizado! ${pendingIntentions.length} intencao(oes) enviada(s).`,
       dispatched: true,
