@@ -12,15 +12,15 @@ interface Parish {
   cnpj?: string;
   pastorName?: string;
   pastorEmail?: string;
+  pastorPhone?: string;
   dispatchEmails: string[];
+  dispatchPhones: string[];
   logoUrl?: string;
   pixKey?: string;
   pixQrCodeUrl?: string;
   zapiInstanceId?: string;
   zapiToken?: string;
   zapiPhone?: string;
-  pastorPhone?: string;
-  dispatchPhones: string[];
 }
 
 export default function ParishPage() {
@@ -53,13 +53,13 @@ export default function ParishPage() {
           cnpj: parish.cnpj,
           pastorName: parish.pastorName,
           pastorEmail: parish.pastorEmail,
+          pastorPhone: parish.pastorPhone,
           dispatchEmails: parish.dispatchEmails,
+          dispatchPhones: parish.dispatchPhones,
           pixKey: parish.pixKey,
           zapiInstanceId: parish.zapiInstanceId,
           zapiToken: parish.zapiToken,
           zapiPhone: parish.zapiPhone,
-          pastorPhone: parish.pastorPhone,
-          dispatchPhones: parish.dispatchPhones,
         }),
       });
       alert('Dados salvos com sucesso!');
@@ -173,15 +173,15 @@ export default function ParishPage() {
   };
 
   if (loading) return <p className="text-gray-500">Carregando...</p>;
-  if (!parish) return <p className="text-red-500">Erro ao carregar dados da paróquia</p>;
+  if (!parish) return <p className="text-red-500">Erro ao carregar dados da paroquia</p>;
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">Dados da Paróquia</h1>
+      <h1 className="text-2xl font-bold text-gray-800 mb-6">Dados da Paroquia</h1>
 
       <div className="bg-white rounded-lg shadow p-6 space-y-4 max-w-2xl">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Paróquia</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Nome da Paroquia</label>
           <input
             className="w-full border rounded-md px-3 py-2 text-sm"
             value={parish.parishName}
@@ -190,7 +190,7 @@ export default function ParishPage() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Razão Social</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Razao Social</label>
             <input
               className="w-full border rounded-md px-3 py-2 text-sm"
               value={parish.legalName ?? ''}
@@ -206,25 +206,42 @@ export default function ParishPage() {
             />
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Pároco</label>
-            <input
-              className="w-full border rounded-md px-3 py-2 text-sm"
-              value={parish.pastorName ?? ''}
-              onChange={(e) => setParish({ ...parish, pastorName: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">E-mail do Pároco</label>
-            <input
-              className="w-full border rounded-md px-3 py-2 text-sm"
-              type="email"
-              placeholder="paroco@email.com"
-              value={parish.pastorEmail ?? ''}
-              onChange={(e) => setParish({ ...parish, pastorEmail: e.target.value })}
-            />
-            <p className="text-xs text-gray-500 mt-1">Recebe resumo das intencoes marcadas no tipo de intencao.</p>
+
+        {/* Paroco */}
+        <div className="border-t pt-4 mt-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">Paroco</h3>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+              <input
+                className="w-full border rounded-md px-3 py-2 text-sm"
+                value={parish.pastorName ?? ''}
+                onChange={(e) => setParish({ ...parish, pastorName: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                <input
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  type="email"
+                  placeholder="paroco@email.com"
+                  value={parish.pastorEmail ?? ''}
+                  onChange={(e) => setParish({ ...parish, pastorEmail: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Celular (WhatsApp)</label>
+                <input
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  type="tel"
+                  placeholder="(11) 99999-9999"
+                  value={parish.pastorPhone ?? ''}
+                  onChange={(e) => setParish({ ...parish, pastorPhone: e.target.value })}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">Recebe o resumo das intencoes marcadas no tipo de intencao (por e-mail e WhatsApp).</p>
           </div>
         </div>
 
@@ -249,29 +266,61 @@ export default function ParishPage() {
           )}
         </div>
 
-        {/* Dispatch emails */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">E-mails de Disparo</label>
-          <div className="flex flex-wrap gap-2 mb-2">
-            {parish.dispatchEmails.map((email) => (
-              <span key={email} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                {email}
-                <button onClick={() => removeEmail(email)} className="hover:text-red-600">&times;</button>
-              </span>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <input
-              className="flex-1 border rounded-md px-3 py-2 text-sm"
-              type="email"
-              placeholder="novo@email.com"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEmail())}
-            />
-            <button onClick={addEmail} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">
-              Adicionar
-            </button>
+        {/* Destinatarios do Disparo */}
+        <div className="border-t pt-4 mt-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-1">Destinatarios do Disparo</h3>
+          <p className="text-xs text-gray-500 mb-3">Pessoas que recebem a lista de intencoes (por e-mail e/ou WhatsApp).</p>
+          <div className="space-y-3">
+            {/* Emails */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">E-mails</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {parish.dispatchEmails.map((email) => (
+                  <span key={email} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                    {email}
+                    <button onClick={() => removeEmail(email)} className="hover:text-red-600">&times;</button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 border rounded-md px-3 py-2 text-sm"
+                  type="email"
+                  placeholder="novo@email.com"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEmail())}
+                />
+                <button onClick={addEmail} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">
+                  Adicionar
+                </button>
+              </div>
+            </div>
+            {/* Celulares */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Celulares (WhatsApp)</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(parish.dispatchPhones || []).map((phone) => (
+                  <span key={phone} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                    {phone}
+                    <button onClick={() => removePhone(phone)} className="hover:text-red-600">&times;</button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 border rounded-md px-3 py-2 text-sm"
+                  type="tel"
+                  placeholder="(11) 99999-9999"
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPhone())}
+                />
+                <button onClick={addPhone} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700">
+                  Adicionar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -285,7 +334,7 @@ export default function ParishPage() {
                 className="w-full border rounded-md px-3 py-2 text-sm"
                 value={parish.pixKey ?? ''}
                 onChange={(e) => setParish({ ...parish, pixKey: e.target.value })}
-                placeholder="E-mail, CPF/CNPJ, telefone ou chave aleatória"
+                placeholder="E-mail, CPF/CNPJ, telefone ou chave aleatoria"
               />
             </div>
             <div>
@@ -324,7 +373,7 @@ export default function ParishPage() {
                   className="w-full border rounded-md px-3 py-2 text-sm"
                   value={parish.zapiInstanceId ?? ''}
                   onChange={(e) => setParish({ ...parish, zapiInstanceId: e.target.value })}
-                  placeholder="ID da instância Z-API"
+                  placeholder="ID da instancia Z-API"
                 />
               </div>
               <div>
@@ -333,7 +382,7 @@ export default function ParishPage() {
                   className="w-full border rounded-md px-3 py-2 text-sm"
                   value={parish.zapiToken ?? ''}
                   onChange={(e) => setParish({ ...parish, zapiToken: e.target.value })}
-                  placeholder="Token da instância"
+                  placeholder="Token da instancia"
                   type="password"
                 />
               </div>
@@ -344,47 +393,13 @@ export default function ParishPage() {
                 onClick={checkZapiStatus}
                 className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700"
               >
-                Testar Conexão
+                Testar Conexao
               </button>
               {zapiStatus && (
                 <span className={`text-sm font-medium ${zapiStatus.connected ? 'text-green-600' : 'text-red-600'}`}>
-                  {!zapiStatus.configured ? 'Não configurado' : zapiStatus.connected ? 'Conectado' : 'Desconectado'}
+                  {!zapiStatus.configured ? 'Nao configurado' : zapiStatus.connected ? 'Conectado' : 'Desconectado'}
                 </span>
               )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Celular do Pároco</label>
-              <input
-                className="w-full border rounded-md px-3 py-2 text-sm"
-                value={parish.pastorPhone ?? ''}
-                onChange={(e) => setParish({ ...parish, pastorPhone: e.target.value })}
-                placeholder="(11) 99999-9999"
-              />
-              <p className="text-xs text-gray-500 mt-1">Recebe resumo das intenções via WhatsApp.</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Celulares de Disparo (WhatsApp)</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {(parish.dispatchPhones || []).map((phone) => (
-                  <span key={phone} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                    {phone}
-                    <button onClick={() => removePhone(phone)} className="hover:text-red-600">&times;</button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 border rounded-md px-3 py-2 text-sm"
-                  type="tel"
-                  placeholder="(11) 99999-9999"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPhone())}
-                />
-                <button onClick={addPhone} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700">
-                  Adicionar
-                </button>
-              </div>
             </div>
           </div>
         </div>
