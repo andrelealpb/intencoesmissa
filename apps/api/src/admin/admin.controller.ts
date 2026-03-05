@@ -340,6 +340,13 @@ export class AdminController {
     return this.adminService.deleteNotice(getParishId(req), id);
   }
 
+  // ── WhatsApp (Z-API) ───────────────────────────────────
+
+  @Get("whatsapp/status")
+  getWhatsappStatus(@Req() req: AuthenticatedRequest) {
+    return this.adminService.getWhatsappStatus(getParishId(req));
+  }
+
   // ── Dashboard ──────────────────────────────────────────
 
   @Get("dashboard")

@@ -8,6 +8,7 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "./storage.service";
 import { EmailService } from "./email.service";
+import { WhatsappService } from "./whatsapp.service";
 import type {
   ParishProfileInput,
   ParishSettingsInput,
@@ -26,6 +27,7 @@ export class AdminService {
     private prisma: PrismaService,
     private storage: StorageService,
     private email: EmailService,
+    private whatsapp: WhatsappService,
   ) {}
 
   // ── Parish Profile ─────────────────────────────────────
@@ -61,6 +63,11 @@ export class AdminService {
         pastorEmail: data.pastorEmail || null,
         dispatchEmails: data.dispatchEmails,
         pixKey: data.pixKey,
+        zapiInstanceId: data.zapiInstanceId || null,
+        zapiToken: data.zapiToken || null,
+        zapiPhone: data.zapiPhone || null,
+        pastorPhone: data.pastorPhone || null,
+        dispatchPhones: data.dispatchPhones || [],
       },
     });
   }
@@ -823,6 +830,26 @@ export class AdminService {
       passThrough.on("end", () => resolve(Buffer.concat(pdfChunks)));
       passThrough.on("error", reject);
     });
+  }
+
+  // ── WhatsApp (Z-API) ───────────────────────────────────
+
+  async getWhatsappStatus(parishId: string) {
+    const parish = await this.prisma.parish.findUnique({
+      where: { id: parishId },
+      select: { zapiInstanceId: true, zapiToken: true, zapiPhone: true },
+    });
+
+    if (!parish?.zapiInstanceId || !parish?.zapiToken) {
+      return { configured: false, connected: false };
+    }
+
+    try {
+      const status = await this.whatsapp.getStatus(parish.zapiInstanceId, parish.zapiToken);
+      return { configured: true, ...status };
+    } catch (err: any) {
+      return { configured: true, connected: false, error: err.message };
+    }
   }
 
   // ── Dashboard ──────────────────────────────────────────

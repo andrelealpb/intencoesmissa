@@ -16,6 +16,11 @@ interface Parish {
   logoUrl?: string;
   pixKey?: string;
   pixQrCodeUrl?: string;
+  zapiInstanceId?: string;
+  zapiToken?: string;
+  zapiPhone?: string;
+  pastorPhone?: string;
+  dispatchPhones: string[];
 }
 
 export default function ParishPage() {
@@ -24,6 +29,8 @@ export default function ParishPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [emailInput, setEmailInput] = useState('');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean } | null>(null);
 
   useEffect(() => {
     if (!session?.accessToken) return;
@@ -48,6 +55,11 @@ export default function ParishPage() {
           pastorEmail: parish.pastorEmail,
           dispatchEmails: parish.dispatchEmails,
           pixKey: parish.pixKey,
+          zapiInstanceId: parish.zapiInstanceId,
+          zapiToken: parish.zapiToken,
+          zapiPhone: parish.zapiPhone,
+          pastorPhone: parish.pastorPhone,
+          dispatchPhones: parish.dispatchPhones,
         }),
       });
       alert('Dados salvos com sucesso!');
@@ -68,6 +80,29 @@ export default function ParishPage() {
   const removeEmail = (email: string) => {
     if (parish) {
       setParish({ ...parish, dispatchEmails: parish.dispatchEmails.filter((e) => e !== email) });
+    }
+  };
+
+  const addPhone = () => {
+    if (phoneInput && parish && !parish.dispatchPhones.includes(phoneInput)) {
+      setParish({ ...parish, dispatchPhones: [...parish.dispatchPhones, phoneInput] });
+      setPhoneInput('');
+    }
+  };
+
+  const removePhone = (phone: string) => {
+    if (parish) {
+      setParish({ ...parish, dispatchPhones: parish.dispatchPhones.filter((p) => p !== phone) });
+    }
+  };
+
+  const checkZapiStatus = async () => {
+    if (!session?.accessToken) return;
+    try {
+      const status = await apiAuthFetch('/admin/whatsapp/status', session.accessToken as string);
+      setZapiStatus(status);
+    } catch {
+      setZapiStatus({ configured: false, connected: false });
     }
   };
 
@@ -274,6 +309,82 @@ export default function ParishPage() {
                   <p className="text-xs text-gray-500 mt-1">Envie a imagem do QR Code gerado pelo seu banco.</p>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* WhatsApp / Z-API */}
+        <div className="border-t pt-4 mt-4">
+          <h3 className="text-sm font-semibold text-gray-800 mb-3">WhatsApp (Z-API)</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Instance ID</label>
+                <input
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={parish.zapiInstanceId ?? ''}
+                  onChange={(e) => setParish({ ...parish, zapiInstanceId: e.target.value })}
+                  placeholder="ID da instância Z-API"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Token</label>
+                <input
+                  className="w-full border rounded-md px-3 py-2 text-sm"
+                  value={parish.zapiToken ?? ''}
+                  onChange={(e) => setParish({ ...parish, zapiToken: e.target.value })}
+                  placeholder="Token da instância"
+                  type="password"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={checkZapiStatus}
+                className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700"
+              >
+                Testar Conexão
+              </button>
+              {zapiStatus && (
+                <span className={`text-sm font-medium ${zapiStatus.connected ? 'text-green-600' : 'text-red-600'}`}>
+                  {!zapiStatus.configured ? 'Não configurado' : zapiStatus.connected ? 'Conectado' : 'Desconectado'}
+                </span>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Celular do Pároco</label>
+              <input
+                className="w-full border rounded-md px-3 py-2 text-sm"
+                value={parish.pastorPhone ?? ''}
+                onChange={(e) => setParish({ ...parish, pastorPhone: e.target.value })}
+                placeholder="(11) 99999-9999"
+              />
+              <p className="text-xs text-gray-500 mt-1">Recebe resumo das intenções via WhatsApp.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Celulares de Disparo (WhatsApp)</label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(parish.dispatchPhones || []).map((phone) => (
+                  <span key={phone} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                    {phone}
+                    <button onClick={() => removePhone(phone)} className="hover:text-red-600">&times;</button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 border rounded-md px-3 py-2 text-sm"
+                  type="tel"
+                  placeholder="(11) 99999-9999"
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPhone())}
+                />
+                <button onClick={addPhone} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700">
+                  Adicionar
+                </button>
+              </div>
             </div>
           </div>
         </div>

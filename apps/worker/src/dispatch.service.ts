@@ -1,6 +1,7 @@
 import { PrismaClient, IntentionGroup, DispatchScope, DispatchStatus, RequestStatus } from '@prisma/client';
 import { StorageService } from './storage.service';
 import { EmailService } from './email.service';
+import { WhatsappService } from './whatsapp.service';
 import { PdfService } from './pdf.service';
 
 export class DispatchService {
@@ -10,6 +11,7 @@ export class DispatchService {
     private prisma: PrismaClient,
     private storageService: StorageService,
     private emailService: EmailService,
+    private whatsappService: WhatsappService,
   ) {
     this.pdfService = new PdfService();
   }

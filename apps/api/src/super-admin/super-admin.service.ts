@@ -83,6 +83,11 @@ export class SuperAdminService {
       pastorName?: string;
       pastorEmail?: string;
       dispatchEmails?: string[];
+      zapiInstanceId?: string;
+      zapiToken?: string;
+      zapiPhone?: string;
+      pastorPhone?: string;
+      dispatchPhones?: string[];
     },
   ) {
     const parish = await this.prisma.parish.findUnique({ where: { id } });

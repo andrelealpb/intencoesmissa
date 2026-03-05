@@ -3,6 +3,7 @@ import PgBoss from 'pg-boss';
 import { DispatchService } from './dispatch.service';
 import { StorageService } from './storage.service';
 import { EmailService } from './email.service';
+import { WhatsappService } from './whatsapp.service';
 
 async function main() {
   const prisma = new PrismaClient();
@@ -18,7 +19,8 @@ async function main() {
 
   const storageService = new StorageService();
   const emailService = new EmailService();
-  const dispatchService = new DispatchService(prisma, storageService, emailService);
+  const whatsappService = new WhatsappService();
+  const dispatchService = new DispatchService(prisma, storageService, emailService, whatsappService);
 
   await boss.start();
   console.log('PgBoss started');

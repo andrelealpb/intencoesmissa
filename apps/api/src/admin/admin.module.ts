@@ -4,6 +4,7 @@ import { AdminController } from "./admin.controller";
 import { AdminService } from "./admin.service";
 import { StorageService } from "./storage.service";
 import { EmailService } from "./email.service";
+import { WhatsappService } from "./whatsapp.service";
 
 @Module({
   imports: [
@@ -12,7 +13,7 @@ import { EmailService } from "./email.service";
     }),
   ],
   controllers: [AdminController],
-  providers: [AdminService, StorageService, EmailService],
-  exports: [StorageService, EmailService],
+  providers: [AdminService, StorageService, EmailService, WhatsappService],
+  exports: [StorageService, EmailService, WhatsappService],
 })
 export class AdminModule {}

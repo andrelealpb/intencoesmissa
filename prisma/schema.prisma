@@ -59,6 +59,11 @@ model Parish {
   pixKey          String?  @map("pix_key")
   pixQrCodeUrl    String?  @map("pix_qr_code_url")
   pixQrCodeStorageKey String? @map("pix_qr_code_storage_key")
+  zapiInstanceId  String?  @map("zapi_instance_id")
+  zapiToken       String?  @map("zapi_token")
+  zapiPhone       String?  @map("zapi_phone")
+  pastorPhone     String?  @map("pastor_phone")
+  dispatchPhones  String[] @map("dispatch_phones")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

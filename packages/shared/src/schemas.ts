@@ -125,6 +125,11 @@ export const parishProfileSchema = z.object({
   pastorEmail: z.string().email("E-mail do paroco invalido").nullish().or(z.literal("")),
   dispatchEmails: z.array(z.string().email("E-mail invalido")),
   pixKey: z.string().nullish(),
+  zapiInstanceId: z.string().nullish(),
+  zapiToken: z.string().nullish(),
+  zapiPhone: z.string().nullish(),
+  pastorPhone: z.string().nullish(),
+  dispatchPhones: z.array(z.string()).optional(),
 });
 
 // ---------------------------------------------------------------------------
