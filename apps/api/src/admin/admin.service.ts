@@ -931,6 +931,19 @@ export class AdminService {
     }
   }
 
+  async getWhatsappGroups(parishId: string) {
+    const parish = await this.prisma.parish.findUnique({
+      where: { id: parishId },
+      select: { zapiInstanceId: true, zapiToken: true, zapiClientToken: true },
+    });
+
+    if (!parish?.zapiInstanceId || !parish?.zapiToken) {
+      throw new BadRequestException("WhatsApp (Z-API) nao configurado");
+    }
+
+    return this.whatsapp.listGroups(parish.zapiInstanceId, parish.zapiToken, parish.zapiClientToken);
+  }
+
   // ── Dashboard ──────────────────────────────────────────
 
   async getDashboard(parishId: string, from?: string, to?: string) {

@@ -136,6 +136,33 @@ export class WhatsappService {
   }
 
   /**
+   * List all WhatsApp groups for the connected instance.
+   */
+  async listGroups(
+    instanceId: string,
+    token: string,
+    clientToken?: string | null,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/groups`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: this.getHeaders(clientToken),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Z-API ${response.status}: ${errorText}`);
+    }
+
+    const data = (await response.json()) as Array<Record<string, any>>;
+    return data.map((g) => ({
+      id: g.phone || g.id || g.groupId,
+      name: g.name || g.subject || g.phone || 'Sem nome',
+    }));
+  }
+
+  /**
    * Format phone number: remove non-digits, ensure country code.
    */
   private formatPhone(phone: string): string {

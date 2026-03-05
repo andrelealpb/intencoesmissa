@@ -347,6 +347,11 @@ export class AdminController {
     return this.adminService.getWhatsappStatus(getParishId(req));
   }
 
+  @Get("whatsapp/groups")
+  getWhatsappGroups(@Req() req: AuthenticatedRequest) {
+    return this.adminService.getWhatsappGroups(getParishId(req));
+  }
+
   // ── Dashboard ──────────────────────────────────────────
 
   @Get("dashboard")

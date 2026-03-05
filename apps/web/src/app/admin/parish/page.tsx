@@ -44,6 +44,8 @@ export default function ParishPage() {
   const [zapiClientToken, setZapiClientToken] = useState('');
   const [dispatchGroups, setDispatchGroups] = useState<string[]>([]);
   const [newGroupId, setNewGroupId] = useState('');
+  const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadingGroups, setLoadingGroups] = useState(false);
   const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean; phone?: string; error?: string } | null>(null);
   const [zapiChecking, setZapiChecking] = useState(false);
 
@@ -474,31 +476,72 @@ export default function ParishPage() {
                 Grupos do WhatsApp
               </label>
               <p className="text-xs text-gray-500 mb-2">
-                Adicione IDs de grupos para receber o PDF das intencoes. O ID do grupo pode ser obtido no painel da Z-API (ex: 120363019502650977-group).
+                Selecione os grupos que devem receber o PDF das intencoes.
               </p>
               <div className="space-y-2">
-                {dispatchGroups.map((g, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      className="flex-1 border rounded-md px-3 py-2 text-sm bg-gray-50"
-                      value={g}
-                      readOnly
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setDispatchGroups(dispatchGroups.filter((_, i) => i !== idx))}
-                      className="text-red-500 hover:text-red-700 text-sm font-medium px-2"
-                    >
-                      Remover
-                    </button>
+                {dispatchGroups.map((g, idx) => {
+                  const groupInfo = availableGroups.find((ag) => ag.id === g);
+                  return (
+                    <div key={idx} className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                      <span className="flex-1 text-sm text-green-800">
+                        {groupInfo ? groupInfo.name : g}
+                      </span>
+                      <span className="text-xs text-gray-400 font-mono">{g}</span>
+                      <button
+                        type="button"
+                        onClick={() => setDispatchGroups(dispatchGroups.filter((_, i) => i !== idx))}
+                        className="text-red-500 hover:text-red-700 text-sm font-medium px-2"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!session?.accessToken) return;
+                    setLoadingGroups(true);
+                    try {
+                      const groups = await apiAuthFetch('/admin/whatsapp/groups', session.accessToken as string);
+                      setAvailableGroups(groups);
+                    } catch (err: any) {
+                      alert('Erro ao buscar grupos: ' + (err.message || 'Erro desconhecido'));
+                    } finally {
+                      setLoadingGroups(false);
+                    }
+                  }}
+                  disabled={loadingGroups}
+                  className="bg-gray-100 border border-gray-300 text-gray-700 px-4 py-2 rounded-md text-sm hover:bg-gray-200 disabled:opacity-50"
+                >
+                  {loadingGroups ? 'Buscando grupos...' : 'Buscar Grupos do WhatsApp'}
+                </button>
+                {availableGroups.length > 0 && (
+                  <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
+                    {availableGroups
+                      .filter((g) => !dispatchGroups.includes(g.id))
+                      .map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setDispatchGroups([...dispatchGroups, g.id])}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between"
+                        >
+                          <span>{g.name}</span>
+                          <span className="text-xs text-gray-400">Adicionar</span>
+                        </button>
+                      ))}
+                    {availableGroups.filter((g) => !dispatchGroups.includes(g.id)).length === 0 && (
+                      <p className="px-3 py-2 text-sm text-gray-500">Todos os grupos ja foram adicionados.</p>
+                    )}
                   </div>
-                ))}
+                )}
                 <div className="flex items-center gap-2">
                   <input
                     className="flex-1 border rounded-md px-3 py-2 text-sm"
                     value={newGroupId}
                     onChange={(e) => setNewGroupId(e.target.value)}
-                    placeholder="ID do grupo (ex: 120363019502650977-group)"
+                    placeholder="Ou digite o ID manualmente (ex: 120363019502650977-group)"
                   />
                   <button
                     type="button"
