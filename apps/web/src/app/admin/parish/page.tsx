@@ -37,6 +37,8 @@ export default function ParishPage() {
   const [saving, setSaving] = useState(false);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [newRecipient, setNewRecipient] = useState<Recipient>({ name: '', email: '', phone: '' });
+  const [zapiInstanceId, setZapiInstanceId] = useState('');
+  const [zapiToken, setZapiToken] = useState('');
   const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean } | null>(null);
 
   useEffect(() => {
@@ -44,6 +46,8 @@ export default function ParishPage() {
     apiAuthFetch('/admin/parish/profile', session.accessToken as string)
       .then((data: Parish) => {
         setParish(data);
+        setZapiInstanceId(data.zapiInstanceId || '');
+        setZapiToken(data.zapiToken || '');
         // Initialize recipients from dispatchRecipients or build from legacy arrays
         if (data.dispatchRecipients && data.dispatchRecipients.length > 0) {
           setRecipients(data.dispatchRecipients);
@@ -85,8 +89,8 @@ export default function ParishPage() {
           dispatchPhones: recipients.map((r) => r.phone).filter(Boolean),
           dispatchRecipients: recipients.filter((r) => r.name || r.email || r.phone),
           pixKey: parish.pixKey,
-          zapiInstanceId: parish.zapiInstanceId,
-          zapiToken: parish.zapiToken,
+          zapiInstanceId: zapiInstanceId || null,
+          zapiToken: zapiToken || null,
           zapiPhone: parish.zapiPhone,
         }),
       });
@@ -412,8 +416,8 @@ export default function ParishPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Instance ID</label>
                 <input
                   className="w-full border rounded-md px-3 py-2 text-sm"
-                  value={parish.zapiInstanceId ?? ''}
-                  onChange={(e) => setParish((prev) => prev ? { ...prev, zapiInstanceId: e.target.value } : prev)}
+                  value={zapiInstanceId}
+                  onChange={(e) => setZapiInstanceId(e.target.value)}
                   placeholder="ID da instancia Z-API"
                 />
               </div>
@@ -421,8 +425,8 @@ export default function ParishPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Token</label>
                 <input
                   className="w-full border rounded-md px-3 py-2 text-sm"
-                  value={parish.zapiToken ?? ''}
-                  onChange={(e) => setParish((prev) => prev ? { ...prev, zapiToken: e.target.value } : prev)}
+                  value={zapiToken}
+                  onChange={(e) => setZapiToken(e.target.value)}
                   placeholder="Token da instancia"
                 />
               </div>
