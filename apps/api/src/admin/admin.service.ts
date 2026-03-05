@@ -52,6 +52,11 @@ export class AdminService {
   }
 
   async updateParishProfile(parishId: string, data: ParishProfileInput) {
+    // Sync flat arrays from recipients for backward compatibility in dispatch flow
+    const recipients = data.dispatchRecipients || [];
+    const emails = recipients.map((r) => r.email).filter(Boolean);
+    const phones = recipients.map((r) => r.phone).filter(Boolean);
+
     return this.prisma.parish.update({
       where: { id: parishId },
       data: {
@@ -61,13 +66,14 @@ export class AdminService {
         parishName: data.parishName,
         pastorName: data.pastorName,
         pastorEmail: data.pastorEmail || null,
-        dispatchEmails: data.dispatchEmails,
+        dispatchEmails: emails.length > 0 ? emails : data.dispatchEmails,
         pixKey: data.pixKey,
         zapiInstanceId: data.zapiInstanceId || null,
         zapiToken: data.zapiToken || null,
         zapiPhone: data.zapiPhone || null,
         pastorPhone: data.pastorPhone || null,
-        dispatchPhones: data.dispatchPhones || [],
+        dispatchPhones: phones.length > 0 ? phones : (data.dispatchPhones || []),
+        dispatchRecipients: recipients.length > 0 ? recipients : undefined,
       },
     });
   }

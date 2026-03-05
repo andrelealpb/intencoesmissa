@@ -4,6 +4,12 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { apiAuthFetch } from '@/lib/api';
 
+interface Recipient {
+  name: string;
+  email: string;
+  phone: string;
+}
+
 interface Parish {
   id: string;
   slug: string;
@@ -15,6 +21,7 @@ interface Parish {
   pastorPhone?: string;
   dispatchEmails: string[];
   dispatchPhones: string[];
+  dispatchRecipients?: Recipient[];
   logoUrl?: string;
   pixKey?: string;
   pixQrCodeUrl?: string;
@@ -28,14 +35,34 @@ export default function ParishPage() {
   const [parish, setParish] = useState<Parish | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [phoneInput, setPhoneInput] = useState('');
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [newRecipient, setNewRecipient] = useState<Recipient>({ name: '', email: '', phone: '' });
   const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean } | null>(null);
 
   useEffect(() => {
     if (!session?.accessToken) return;
     apiAuthFetch('/admin/parish/profile', session.accessToken as string)
-      .then(setParish)
+      .then((data: Parish) => {
+        setParish(data);
+        // Initialize recipients from dispatchRecipients or build from legacy arrays
+        if (data.dispatchRecipients && data.dispatchRecipients.length > 0) {
+          setRecipients(data.dispatchRecipients);
+        } else {
+          // Build from legacy separate arrays
+          const emails = data.dispatchEmails || [];
+          const phones = data.dispatchPhones || [];
+          const maxLen = Math.max(emails.length, phones.length);
+          const built: Recipient[] = [];
+          for (let i = 0; i < maxLen; i++) {
+            built.push({
+              name: '',
+              email: emails[i] || '',
+              phone: phones[i] || '',
+            });
+          }
+          setRecipients(built);
+        }
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [session]);
@@ -54,8 +81,9 @@ export default function ParishPage() {
           pastorName: parish.pastorName,
           pastorEmail: parish.pastorEmail,
           pastorPhone: parish.pastorPhone,
-          dispatchEmails: parish.dispatchEmails,
-          dispatchPhones: parish.dispatchPhones,
+          dispatchEmails: recipients.map((r) => r.email).filter(Boolean),
+          dispatchPhones: recipients.map((r) => r.phone).filter(Boolean),
+          dispatchRecipients: recipients.filter((r) => r.name || r.email || r.phone),
           pixKey: parish.pixKey,
           zapiInstanceId: parish.zapiInstanceId,
           zapiToken: parish.zapiToken,
@@ -70,30 +98,18 @@ export default function ParishPage() {
     }
   };
 
-  const addEmail = () => {
-    if (emailInput && parish && !parish.dispatchEmails.includes(emailInput)) {
-      setParish({ ...parish, dispatchEmails: [...parish.dispatchEmails, emailInput] });
-      setEmailInput('');
-    }
+  const addRecipient = () => {
+    if (!newRecipient.name && !newRecipient.email && !newRecipient.phone) return;
+    setRecipients((prev) => [...prev, { ...newRecipient }]);
+    setNewRecipient({ name: '', email: '', phone: '' });
   };
 
-  const removeEmail = (email: string) => {
-    if (parish) {
-      setParish({ ...parish, dispatchEmails: parish.dispatchEmails.filter((e) => e !== email) });
-    }
+  const removeRecipient = (index: number) => {
+    setRecipients((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const addPhone = () => {
-    if (phoneInput && parish && !parish.dispatchPhones.includes(phoneInput)) {
-      setParish({ ...parish, dispatchPhones: [...parish.dispatchPhones, phoneInput] });
-      setPhoneInput('');
-    }
-  };
-
-  const removePhone = (phone: string) => {
-    if (parish) {
-      setParish({ ...parish, dispatchPhones: parish.dispatchPhones.filter((p) => p !== phone) });
-    }
+  const updateRecipient = (index: number, field: keyof Recipient, value: string) => {
+    setRecipients((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
   };
 
   const checkZapiStatus = async () => {
@@ -185,7 +201,7 @@ export default function ParishPage() {
           <input
             className="w-full border rounded-md px-3 py-2 text-sm"
             value={parish.parishName}
-            onChange={(e) => setParish({ ...parish, parishName: e.target.value })}
+            onChange={(e) => setParish((prev) => prev ? { ...prev, parishName: e.target.value } : prev)}
           />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -194,7 +210,7 @@ export default function ParishPage() {
             <input
               className="w-full border rounded-md px-3 py-2 text-sm"
               value={parish.legalName ?? ''}
-              onChange={(e) => setParish({ ...parish, legalName: e.target.value })}
+              onChange={(e) => setParish((prev) => prev ? { ...prev, legalName: e.target.value } : prev)}
             />
           </div>
           <div>
@@ -202,7 +218,7 @@ export default function ParishPage() {
             <input
               className="w-full border rounded-md px-3 py-2 text-sm"
               value={parish.cnpj ?? ''}
-              onChange={(e) => setParish({ ...parish, cnpj: e.target.value })}
+              onChange={(e) => setParish((prev) => prev ? { ...prev, cnpj: e.target.value } : prev)}
             />
           </div>
         </div>
@@ -216,7 +232,7 @@ export default function ParishPage() {
               <input
                 className="w-full border rounded-md px-3 py-2 text-sm"
                 value={parish.pastorName ?? ''}
-                onChange={(e) => setParish({ ...parish, pastorName: e.target.value })}
+                onChange={(e) => setParish((prev) => prev ? { ...prev, pastorName: e.target.value } : prev)}
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -227,7 +243,7 @@ export default function ParishPage() {
                   type="email"
                   placeholder="paroco@email.com"
                   value={parish.pastorEmail ?? ''}
-                  onChange={(e) => setParish({ ...parish, pastorEmail: e.target.value })}
+                  onChange={(e) => setParish((prev) => prev ? { ...prev, pastorEmail: e.target.value } : prev)}
                 />
               </div>
               <div>
@@ -237,7 +253,7 @@ export default function ParishPage() {
                   type="tel"
                   placeholder="(11) 99999-9999"
                   value={parish.pastorPhone ?? ''}
-                  onChange={(e) => setParish({ ...parish, pastorPhone: e.target.value })}
+                  onChange={(e) => setParish((prev) => prev ? { ...prev, pastorPhone: e.target.value } : prev)}
                 />
               </div>
             </div>
@@ -270,57 +286,82 @@ export default function ParishPage() {
         <div className="border-t pt-4 mt-4">
           <h3 className="text-sm font-semibold text-gray-800 mb-1">Destinatarios do Disparo</h3>
           <p className="text-xs text-gray-500 mb-3">Pessoas que recebem a lista de intencoes (por e-mail e/ou WhatsApp).</p>
-          <div className="space-y-3">
-            {/* Emails */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">E-mails</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {parish.dispatchEmails.map((email) => (
-                  <span key={email} className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                    {email}
-                    <button onClick={() => removeEmail(email)} className="hover:text-red-600">&times;</button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 border rounded-md px-3 py-2 text-sm"
-                  type="email"
-                  placeholder="novo@email.com"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEmail())}
-                />
-                <button onClick={addEmail} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm hover:bg-blue-700">
-                  Adicionar
-                </button>
-              </div>
+
+          {/* Recipients list */}
+          {recipients.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {recipients.map((r, idx) => (
+                <div key={idx} className="border rounded-md p-3 bg-gray-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-500">Pessoa {idx + 1}</span>
+                    <button
+                      onClick={() => removeRecipient(idx)}
+                      className="text-red-500 hover:text-red-700 text-xs"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <input
+                      className="border rounded-md px-2 py-1.5 text-sm"
+                      placeholder="Nome"
+                      value={r.name}
+                      onChange={(e) => updateRecipient(idx, 'name', e.target.value)}
+                    />
+                    <input
+                      className="border rounded-md px-2 py-1.5 text-sm"
+                      placeholder="E-mail"
+                      type="email"
+                      value={r.email}
+                      onChange={(e) => updateRecipient(idx, 'email', e.target.value)}
+                    />
+                    <input
+                      className="border rounded-md px-2 py-1.5 text-sm"
+                      placeholder="Celular"
+                      type="tel"
+                      value={r.phone}
+                      onChange={(e) => updateRecipient(idx, 'phone', e.target.value)}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
-            {/* Celulares */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Celulares (WhatsApp)</label>
-              <div className="flex flex-wrap gap-2 mb-2">
-                {(parish.dispatchPhones || []).map((phone) => (
-                  <span key={phone} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full flex items-center gap-1">
-                    {phone}
-                    <button onClick={() => removePhone(phone)} className="hover:text-red-600">&times;</button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  className="flex-1 border rounded-md px-3 py-2 text-sm"
-                  type="tel"
-                  placeholder="(11) 99999-9999"
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPhone())}
-                />
-                <button onClick={addPhone} className="bg-green-600 text-white px-4 py-2 rounded-md text-sm hover:bg-green-700">
-                  Adicionar
-                </button>
-              </div>
+          )}
+
+          {/* Add new recipient */}
+          <div className="border rounded-md p-3 bg-blue-50">
+            <span className="text-xs font-medium text-blue-700 mb-2 block">Adicionar pessoa</span>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+              <input
+                className="border rounded-md px-2 py-1.5 text-sm"
+                placeholder="Nome"
+                value={newRecipient.name}
+                onChange={(e) => setNewRecipient((prev) => ({ ...prev, name: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addRecipient())}
+              />
+              <input
+                className="border rounded-md px-2 py-1.5 text-sm"
+                placeholder="E-mail"
+                type="email"
+                value={newRecipient.email}
+                onChange={(e) => setNewRecipient((prev) => ({ ...prev, email: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addRecipient())}
+              />
+              <input
+                className="border rounded-md px-2 py-1.5 text-sm"
+                placeholder="Celular"
+                type="tel"
+                value={newRecipient.phone}
+                onChange={(e) => setNewRecipient((prev) => ({ ...prev, phone: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addRecipient())}
+              />
             </div>
+            <button
+              onClick={addRecipient}
+              className="bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm hover:bg-blue-700"
+            >
+              Adicionar
+            </button>
           </div>
         </div>
 
@@ -333,7 +374,7 @@ export default function ParishPage() {
               <input
                 className="w-full border rounded-md px-3 py-2 text-sm"
                 value={parish.pixKey ?? ''}
-                onChange={(e) => setParish({ ...parish, pixKey: e.target.value })}
+                onChange={(e) => setParish((prev) => prev ? { ...prev, pixKey: e.target.value } : prev)}
                 placeholder="E-mail, CPF/CNPJ, telefone ou chave aleatoria"
               />
             </div>
@@ -372,7 +413,7 @@ export default function ParishPage() {
                 <input
                   className="w-full border rounded-md px-3 py-2 text-sm"
                   value={parish.zapiInstanceId ?? ''}
-                  onChange={(e) => setParish({ ...parish, zapiInstanceId: e.target.value })}
+                  onChange={(e) => setParish((prev) => prev ? { ...prev, zapiInstanceId: e.target.value } : prev)}
                   placeholder="ID da instancia Z-API"
                 />
               </div>
@@ -381,7 +422,7 @@ export default function ParishPage() {
                 <input
                   className="w-full border rounded-md px-3 py-2 text-sm"
                   value={parish.zapiToken ?? ''}
-                  onChange={(e) => setParish({ ...parish, zapiToken: e.target.value })}
+                  onChange={(e) => setParish((prev) => prev ? { ...prev, zapiToken: e.target.value } : prev)}
                   placeholder="Token da instancia"
                   type="password"
                 />

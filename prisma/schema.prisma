@@ -54,6 +54,8 @@ model Parish {
   addressJson     Json?    @map("address_json") @db.JsonB
   phonesJson      Json?    @map("phones_json") @db.JsonB
   dispatchEmails  String[] @map("dispatch_emails")
+  dispatchPhones  String[] @map("dispatch_phones")
+  dispatchRecipients Json? @map("dispatch_recipients") @db.JsonB
   logoUrl         String?  @map("logo_url")
   logoStorageKey  String?  @map("logo_storage_key")
   pixKey          String?  @map("pix_key")
@@ -63,7 +65,6 @@ model Parish {
   zapiToken       String?  @map("zapi_token")
   zapiPhone       String?  @map("zapi_phone")
   pastorPhone     String?  @map("pastor_phone")
-  dispatchPhones  String[] @map("dispatch_phones")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
