@@ -1,4 +1,14 @@
 export class WhatsappService {
+  private readonly clientToken = process.env.ZAPI_CLIENT_TOKEN || '';
+
+  private getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (this.clientToken) {
+      headers['Client-Token'] = this.clientToken;
+    }
+    return headers;
+  }
+
   /**
    * Send a PDF document via WhatsApp using Z-API.
    */
@@ -24,7 +34,7 @@ export class WhatsappService {
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders(),
       body: JSON.stringify(body),
     });
 
@@ -56,7 +66,7 @@ export class WhatsappService {
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders(),
       body: JSON.stringify(body),
     });
 
@@ -76,7 +86,7 @@ export class WhatsappService {
 
     const response = await fetch(url, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders(),
     });
 
     if (!response.ok) {
