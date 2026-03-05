@@ -55,6 +55,7 @@ model Parish {
   phonesJson      Json?    @map("phones_json") @db.JsonB
   dispatchEmails  String[] @map("dispatch_emails")
   dispatchPhones  String[] @map("dispatch_phones")
+  dispatchGroups  String[] @map("dispatch_groups")
   dispatchRecipients Json? @map("dispatch_recipients") @db.JsonB
   logoUrl         String?  @map("logo_url")
   logoStorageKey  String?  @map("logo_storage_key")

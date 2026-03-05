@@ -74,6 +74,7 @@ export class AdminService {
         zapiPhone: data.zapiPhone || null,
         pastorPhone: data.pastorPhone || null,
         dispatchPhones: phones.length > 0 ? phones : (data.dispatchPhones || []),
+        dispatchGroups: data.dispatchGroups || [],
         dispatchRecipients: recipients.length > 0 ? recipients : undefined,
       },
     });
@@ -757,6 +758,20 @@ export class AdminService {
           sentToPhones.push(phone);
         } catch (err) {
           this.logger.error(`WhatsApp falhou para ${phone}`, err);
+        }
+      }
+
+      // Send to dispatch groups
+      for (const groupId of (parish.dispatchGroups || [])) {
+        try {
+          await this.whatsapp.sendDocument(
+            parish.zapiInstanceId, parish.zapiToken,
+            groupId, pdfBuffer, whatsappFilename, captionWp,
+            parish.zapiClientToken,
+          );
+          sentToPhones.push(groupId);
+        } catch (err) {
+          this.logger.error(`WhatsApp falhou para grupo ${groupId}`, err);
         }
       }
 

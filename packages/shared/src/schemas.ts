@@ -131,6 +131,7 @@ export const parishProfileSchema = z.object({
   zapiPhone: z.string().nullish(),
   pastorPhone: z.string().nullish(),
   dispatchPhones: z.array(z.string()).optional(),
+  dispatchGroups: z.array(z.string()).optional(),
   dispatchRecipients: z.array(z.object({
     name: z.string(),
     email: z.string(),

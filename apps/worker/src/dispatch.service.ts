@@ -336,6 +336,20 @@ export class DispatchService {
           }
         }
 
+        // Send to dispatch groups
+        for (const groupId of (parish.dispatchGroups || [])) {
+          try {
+            await this.whatsappService.sendDocument(
+              parish.zapiInstanceId, parish.zapiToken,
+              groupId, pdfBuffer, whatsappFilename, caption,
+              parish.zapiClientToken,
+            );
+            sentToPhones.push(groupId);
+          } catch (wpErr: any) {
+            console.error(`[Dispatch] WhatsApp falhou para grupo ${groupId}:`, wpErr.message);
+          }
+        }
+
         // Send pastor summary via WhatsApp
         if (parish.pastorPhone) {
           try {

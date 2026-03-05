@@ -139,6 +139,10 @@ export class WhatsappService {
    * Format phone number: remove non-digits, ensure country code.
    */
   private formatPhone(phone: string): string {
+    // Group IDs contain "-group" suffix — pass through as-is
+    if (phone.includes("-group") || phone.includes("-")) {
+      return phone;
+    }
     const digits = phone.replace(/\D/g, "");
     if (digits.startsWith("55") && digits.length >= 12) {
       return digits;

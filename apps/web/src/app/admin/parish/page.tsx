@@ -21,6 +21,7 @@ interface Parish {
   pastorPhone?: string;
   dispatchEmails: string[];
   dispatchPhones: string[];
+  dispatchGroups: string[];
   dispatchRecipients?: Recipient[];
   logoUrl?: string;
   pixKey?: string;
@@ -41,6 +42,8 @@ export default function ParishPage() {
   const [zapiInstanceId, setZapiInstanceId] = useState('');
   const [zapiToken, setZapiToken] = useState('');
   const [zapiClientToken, setZapiClientToken] = useState('');
+  const [dispatchGroups, setDispatchGroups] = useState<string[]>([]);
+  const [newGroupId, setNewGroupId] = useState('');
   const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean; phone?: string; error?: string } | null>(null);
   const [zapiChecking, setZapiChecking] = useState(false);
 
@@ -68,6 +71,7 @@ export default function ParishPage() {
         setZapiInstanceId(data.zapiInstanceId || '');
         setZapiToken(data.zapiToken || '');
         setZapiClientToken(data.zapiClientToken || '');
+        setDispatchGroups(data.dispatchGroups || []);
         // Auto-check WhatsApp status if configured
         if (data.zapiInstanceId && data.zapiToken) {
           checkZapiStatus(token);
@@ -117,6 +121,7 @@ export default function ParishPage() {
           zapiToken: zapiToken || null,
           zapiClientToken: zapiClientToken || null,
           zapiPhone: parish.zapiPhone,
+          dispatchGroups,
         }),
       });
       alert('Dados salvos com sucesso!');
@@ -463,6 +468,54 @@ export default function ParishPage() {
                 readOnly
                 placeholder="Sera preenchido automaticamente ao conectar"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Grupos do WhatsApp
+              </label>
+              <p className="text-xs text-gray-500 mb-2">
+                Adicione IDs de grupos para receber o PDF das intencoes. O ID do grupo pode ser obtido no painel da Z-API (ex: 120363019502650977-group).
+              </p>
+              <div className="space-y-2">
+                {dispatchGroups.map((g, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      className="flex-1 border rounded-md px-3 py-2 text-sm bg-gray-50"
+                      value={g}
+                      readOnly
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDispatchGroups(dispatchGroups.filter((_, i) => i !== idx))}
+                      className="text-red-500 hover:text-red-700 text-sm font-medium px-2"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2">
+                  <input
+                    className="flex-1 border rounded-md px-3 py-2 text-sm"
+                    value={newGroupId}
+                    onChange={(e) => setNewGroupId(e.target.value)}
+                    placeholder="ID do grupo (ex: 120363019502650977-group)"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const trimmed = newGroupId.trim();
+                      if (trimmed && !dispatchGroups.includes(trimmed)) {
+                        setDispatchGroups([...dispatchGroups, trimmed]);
+                        setNewGroupId('');
+                      }
+                    }}
+                    disabled={!newGroupId.trim()}
+                    className="bg-green-600 text-white px-3 py-2 rounded-md text-sm hover:bg-green-700 disabled:opacity-50"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <button
