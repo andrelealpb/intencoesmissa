@@ -107,10 +107,32 @@ export class WhatsappService {
       smartphoneConnected?: boolean;
       phone?: string;
     };
-    return {
-      connected: data.connected === true || data.smartphoneConnected === true,
-      phone: data.phone,
-    };
+
+    const isConnected = data.connected === true || data.smartphoneConnected === true;
+    let phone = data.phone;
+
+    // If connected but no phone in status, try dedicated endpoints
+    if (isConnected && !phone) {
+      const phoneEndpoints = ['get-phone-number', 'phone'];
+      for (const ep of phoneEndpoints) {
+        try {
+          const phoneUrl = `https://api.z-api.io/instances/${instanceId}/token/${token}/${ep}`;
+          const phoneRes = await fetch(phoneUrl, {
+            method: "GET",
+            headers: this.getHeaders(clientToken),
+          });
+          if (phoneRes.ok) {
+            const phoneData = (await phoneRes.json()) as Record<string, any>;
+            phone = phoneData.phone || phoneData.number || phoneData.value;
+            if (phone) break;
+          }
+        } catch {
+          // Ignore — phone is optional
+        }
+      }
+    }
+
+    return { connected: isConnected, phone };
   }
 
   /**
