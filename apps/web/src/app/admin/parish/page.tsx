@@ -424,7 +424,6 @@ export default function ParishPage() {
                   value={parish.zapiToken ?? ''}
                   onChange={(e) => setParish((prev) => prev ? { ...prev, zapiToken: e.target.value } : prev)}
                   placeholder="Token da instancia"
-                  type="password"
                 />
               </div>
             </div>
