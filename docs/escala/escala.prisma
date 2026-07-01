@@ -1,0 +1,336 @@
+// ============================================================================
+// MÓDULO ESCALA — fragmento para mesclar em prisma/schema.prisma
+// ----------------------------------------------------------------------------
+// Convenções seguidas do schema atual: PK UUID, parishId em todas as tabelas
+// (multi-tenant + ownership guard), isActive Boolean, timestamps, enums.
+//
+// Back-relations a adicionar nos modelos EXISTENTES (não reescritos aqui):
+//   Parish:        members Member[]  teams Team[]  massOccurrences MassOccurrence[]
+//                  staffingRequirements StaffingRequirement[]  assignments Assignment[]
+//   MassSchedule:  occurrences MassOccurrence[]  staffingRequirements StaffingRequirement[]
+//   MassException: occurrences MassOccurrence[]  staffingRequirements StaffingRequirement[]
+// ============================================================================
+
+enum MinistryCategory {
+  ALTAR_SERVERS       // acólitos / cerimoniários / coroinhas
+  EUCHARISTIC_MINISTERS // MESC
+  READERS             // leitores da palavra
+  COMMENTATORS        // comentaristas
+  WELCOMING           // acolhida
+  TITHE               // dízimo
+  MUSIC               // música / canto
+  COLLECTION          // coleta
+  DECORATION          // ornamentação
+  SPECIAL             // trânsito, cozinha, equipes ad hoc de festas/sacramentos
+  OTHER
+}
+
+enum StaffingScope {
+  DEFAULT   // qualquer missa da paróquia
+  WEEKDAY   // todas as missas de um dia da semana (ex: todo domingo)
+  SCHEDULE  // um horário regular específico (ex: só a das 10h de domingo)
+  SOLEMNITY // qualquer ocorrência com isSolemnity=true (inclui domingo elevado)
+  OCCASION  // uma celebração específica/nomeada (uma exceção pontual)
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+  MAYBE
+}
+
+enum AssignmentStatus {
+  SCHEDULED   // escalado, aguardando confirmação
+  CONFIRMED   // membro confirmou
+  DECLINED    // membro recusou / não poderá
+  CANCELLED   // removido pelo coordenador
+}
+
+enum MemberAuthTokenType {
+  MAGIC_LINK
+  OTP
+}
+
+// ----------------------------------------------------------------------------
+// PESSOAS
+// ----------------------------------------------------------------------------
+
+// Membro = voluntário que serve (coroinha, MESC, leitor...). É UMA PESSOA no
+// nível da paróquia, independente de quantas equipes/funções acumule.
+// NÃO é um User: não tem senha; autentica por link mágico / OTP (realm próprio).
+model Member {
+  id        String   @id @default(uuid())
+  parishId  String
+  fullName  String
+  phone     String   // canal primário (WhatsApp); e-mail é opcional nesse público
+  email     String?
+  birthDate DateTime? @db.Date // relevante p/ coroinhas (idade/"aposentadoria"); opcional
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parish            Parish                  @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  memberships       TeamMembership[]
+  availabilityRules MemberAvailabilityRule[]
+  availability      AvailabilityEntry[]
+  assignments       Assignment[]
+  authTokens        MemberAuthToken[]
+
+  @@index([parishId, isActive])
+  @@map("members")
+}
+
+// ----------------------------------------------------------------------------
+// EQUIPES E FUNÇÕES
+// ----------------------------------------------------------------------------
+
+model Team {
+  id          String           @id @default(uuid())
+  parishId    String
+  name        String
+  category    MinistryCategory @default(OTHER) // metadado p/ seed/relatório; não restringe
+  description String?
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  parish      Parish                @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  functions   TeamFunction[]
+  memberships TeamMembership[]
+  staffing    StaffingRequirement[]
+  assignments Assignment[]
+
+  @@unique([parishId, name])
+  @@map("teams")
+}
+
+// Função dentro de uma equipe: cerimoniário, cruz, tocha, credência, salmista,
+// líder de credência... Equipes de função única (MESC, comentaristas) têm 1 função.
+model TeamFunction {
+  id          String  @id @default(uuid())
+  parishId    String
+  teamId      String
+  name        String
+  description String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  team           Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  qualifications MembershipFunction[]
+  staffing       StaffingRequirement[]
+  assignments    Assignment[]
+
+  @@unique([teamId, name])
+  @@index([parishId])
+  @@map("team_functions")
+}
+
+// Vínculo pessoa <-> equipe. É AQUI que mora "coordenador" e o teto de escalas.
+model TeamMembership {
+  id                    String   @id @default(uuid())
+  parishId              String
+  teamId                String
+  memberId              String
+  isCoordinator         Boolean  @default(false) // autoridade de gestão limitada à equipe
+  maxAssignmentsPerMonth Int?    // teto POR EQUIPE (definível pelo membro ou coordenador)
+  priority              Int      @default(100) // disputa entre equipes pelo mesmo membro:
+                                               // MENOR = mais forte. Definido pelo MEMBRO
+                                               // (sua preferência); pároco pode sobrepor.
+  isActive              Boolean  @default(true)
+  joinedAt              DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  team          Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  member        Member               @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  qualifications MembershipFunction[]
+
+  @@unique([teamId, memberId])
+  @@index([parishId])
+  @@map("team_memberships")
+}
+
+// Qualificação: quais funções ESTE membro pode exercer NESTA equipe.
+// Roteado pelo membership (não Member↔Function direto) p/ garantir integridade:
+// só dá p/ se qualificar em função de equipe da qual você faz parte.
+model MembershipFunction {
+  id           String @id @default(uuid())
+  membershipId String
+  functionId   String
+  createdAt    DateTime @default(now())
+
+  membership TeamMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  function   TeamFunction   @relation(fields: [functionId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, functionId])
+  @@map("membership_functions")
+}
+
+// ----------------------------------------------------------------------------
+// CALENDÁRIO MATERIALIZADO
+// ----------------------------------------------------------------------------
+
+// Ocorrência concreta de missa (data + hora reais). O worker de Intenções hoje
+// calcula missas "on the fly" e não persiste nada. A Escala PRECISA de âncoras
+// concretas p/ pendurar disponibilidade e escalação. Materializadas para o
+// horizonte de planejamento (o mês) no momento em que se monta a escala.
+model MassOccurrence {
+  id                String   @id @default(uuid())
+  parishId          String
+  date              DateTime @db.Date
+  time              String   // "HH:mm"
+  title             String?  // ex: "Solenidade de Sant'Anna"
+  isSolemnity       Boolean  @default(false) // domingo comum pode ser elevado; a
+                                             // re-materialização (upsert) PRESERVA este flag
+  sourceScheduleId  String?  // se veio de um horário regular
+  sourceExceptionId String?  // se veio de uma exceção
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  parish       Parish             @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  source       MassSchedule?      @relation(fields: [sourceScheduleId], references: [id], onDelete: SetNull)
+  exception    MassException?     @relation(fields: [sourceExceptionId], references: [id], onDelete: SetNull)
+  assignments  Assignment[]
+  availability AvailabilityEntry[]
+
+  @@unique([parishId, date, time])
+  @@index([parishId, date])
+  @@map("mass_occurrences")
+}
+
+// ----------------------------------------------------------------------------
+// DEMANDA (quantas pessoas de cada função por missa)
+// ----------------------------------------------------------------------------
+
+// Espelha o padrão do Emolument (resolução por escopo com prioridade).
+// Prioridade (mais específico vence):
+//   OCCASION > SOLEMNITY > SCHEDULE > WEEKDAY > DEFAULT.
+// Ex.: DEFAULT MESC=2; WEEKDAY(dom) MESC=5; SOLEMNITY MESC=6; OCCASION(Sant'Anna) MESC=8.
+model StaffingRequirement {
+  id              String        @id @default(uuid())
+  parishId        String
+  teamId          String
+  functionId      String
+  requiredCount   Int
+  scope           StaffingScope @default(DEFAULT)
+  weekday         Int?          // quando scope=WEEKDAY (0=Dom..6=Sáb)
+  massScheduleId  String?       // quando scope=SCHEDULE
+  massExceptionId String?       // quando scope=OCCASION
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  team      Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  function  TeamFunction   @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  schedule  MassSchedule?  @relation(fields: [massScheduleId], references: [id], onDelete: Cascade)
+  exception MassException? @relation(fields: [massExceptionId], references: [id], onDelete: Cascade)
+
+  @@index([parishId, teamId, functionId])
+  @@map("staffing_requirements")
+}
+
+// ----------------------------------------------------------------------------
+// DISPONIBILIDADE (o que o membro informa)
+// ----------------------------------------------------------------------------
+
+// Regra recorrente OPCIONAL: pré-preenche as entries quando as ocorrências do
+// mês são materializadas. Ex.: "geralmente sirvo domingo de manhã".
+// É de NÍVEL MEMBRO (não por equipe): responde-se a agenda pessoal uma vez só.
+model MemberAvailabilityRule {
+  id        String   @id @default(uuid())
+  parishId  String
+  memberId  String
+  weekday   Int      // 0=Dom..6=Sáb
+  time      String?  // "HH:mm"; null = qualquer horário do dia
+  available Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, weekday, time])
+  @@map("member_availability_rules")
+}
+
+// Resposta concreta por ocorrência — FONTE DE VERDADE p/ o algoritmo.
+// Também de nível MEMBRO (não por equipe): estar disponível = "posso estar
+// nessa missa". Se serve 2 equipes, a mesma resposta vale p/ ambas.
+model AvailabilityEntry {
+  id           String             @id @default(uuid())
+  parishId     String
+  memberId     String
+  occurrenceId String
+  status       AvailabilityStatus @default(AVAILABLE)
+  note         String?
+  submittedAt  DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  member     Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  occurrence MassOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, occurrenceId])
+  @@index([occurrenceId, status])
+  @@map("availability_entries")
+}
+
+// ----------------------------------------------------------------------------
+// ESCALAÇÃO
+// ----------------------------------------------------------------------------
+
+// Um membro colocado numa função de uma ocorrência. "Vaga em aberto" NÃO é
+// linha: é (requiredCount - assignments) calculado.
+// unique(occurrence, member): backstop físico — ninguém em dois lugares na
+// mesma missa. Empate entre equipes resolve-se por TeamMembership.priority;
+// e a contenda é EXPOSTA ao coordenador (query de visibilidade) antes de
+// virar conflito. publishedAt separa rascunho de escala publicada.
+model Assignment {
+  id               String           @id @default(uuid())
+  parishId         String
+  occurrenceId     String
+  teamId           String
+  functionId       String
+  memberId         String
+  status           AssignmentStatus @default(SCHEDULED)
+  publishedAt      DateTime?        // null = rascunho; preenchido ao publicar a escala
+  assignedByUserId String?          // criado por admin (User) ...
+  assignedByMemberId String?        // ... ou por coordenador (Member)
+  note             String?
+  confirmedAt      DateTime?
+  declinedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  occurrence MassOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  team       Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  function   TeamFunction   @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  member     Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([occurrenceId, memberId])
+  @@index([occurrenceId, functionId])
+  @@index([parishId, teamId])
+  @@map("assignments")
+}
+
+// ----------------------------------------------------------------------------
+// AUTENTICAÇÃO DE MEMBRO (link mágico / OTP) — realm separado do User
+// ----------------------------------------------------------------------------
+
+// Guarda-se o HASH do token/código, nunca o valor bruto. Uso único + TTL curto.
+// O OTP pode ser entregue por WhatsApp (Z-API) — canal que alcança esse público.
+model MemberAuthToken {
+  id        String              @id @default(uuid())
+  parishId  String
+  memberId  String
+  type      MemberAuthTokenType
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([memberId])
+  @@map("member_auth_tokens")
+}
