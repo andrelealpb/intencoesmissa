@@ -185,7 +185,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 
 | ID | Status | PR | Data | Notas |
 |----|--------|----|----|-------|
-| S1 | 📝 | — | — | Doc pronto. Pronto para executar. |
+| S1 | ✅ | #2 | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
 | S2 | 📝 | — | — | Doc pronto. Depende de S1. |
 | S3 | 📝 | — | — | Doc pronto. Depende de S1. Admin-only nesta fase (coordenador ativa em S5/S6). |
 | S4 | ⬜ | — | — | — |
@@ -215,7 +215,32 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
 
-- _(vazio — nenhuma sessão concluída ainda)_
+- **2026-07-01 — S1 (Fundação de dados)** · PR #2
+  - Mesclado o modelo Escala em `prisma/schema.prisma`: 11 modelos
+    (`Member`, `Team`, `TeamFunction`, `TeamMembership`, `MembershipFunction`,
+    `MassOccurrence`, `StaffingRequirement`, `MemberAvailabilityRule`,
+    `AvailabilityEntry`, `Assignment`, `MemberAuthToken`) + 5 enums
+    (`MinistryCategory`, `StaffingScope`, `AvailabilityStatus`,
+    `AssignmentStatus`, `MemberAuthTokenType`).
+  - Fragmento adaptado às convenções do schema existente: `@db.Uuid` em toda
+    PK/FK (necessário — FK `text→uuid` não é aceita pelo Postgres) e colunas
+    `snake_case` via `@map`.
+  - Back-relations adicionadas em `Parish`, `MassSchedule`, `MassException`
+    (mais `parish` em `StaffingRequirement`/`Assignment` para casar os lados).
+  - Enums espelhados em `packages/shared/src/types.ts`.
+  - Migração 12 `add_escala_module`: **puramente aditiva** (`CREATE TYPE/TABLE/INDEX`
+    + `ADD CONSTRAINT`); removido o drift `DROP DEFAULT` que o Prisma tentou
+    embutir em tabelas de Intenções (fora do escopo da S1). Aplica limpo em
+    base zerada (12 migrações) e `migrate status` fica sem drift.
+  - `prisma/seed.ts` estendido com 6 equipes / 15 funções padrão (upsert por
+    chave natural, idempotente — verificado rodando 2x: 0 duplicatas). Corrigido
+    também um bug pré-existente no seed (`dispatchTime` → `dispatchMinutesBefore`,
+    campo removido pela migração 3) que impedia o seed de rodar.
+  - Sem regressão nas Intenções: as falhas de teste/lint remanescentes
+    (`apps/web` sem `@types/jest`, `apps/worker` dispatch mock, lint `shared`,
+    `apps/api` admin.service.spec) são **idênticas na base**, anteriores à S1.
+  - Nota: o workflow `ci.yml` só dispara em PRs para `main`/`develop`; PRs em
+    branches `claude/*` não executam CI.
 
 ---
 

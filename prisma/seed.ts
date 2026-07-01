@@ -39,11 +39,11 @@ async function main() {
     create: {
       parishId: parish.id,
       maxIntentionsPerRequest: 3,
-      dispatchTime: '18:00',
+      dispatchMinutesBefore: 30,
       dispatchScope: 'PER_MASS',
     },
   });
-  console.log(`  Settings created: maxIntentions=${settings.maxIntentionsPerRequest}, dispatchTime=${settings.dispatchTime}, scope=${settings.dispatchScope}`);
+  console.log(`  Settings created: maxIntentions=${settings.maxIntentionsPerRequest}, dispatchMinutesBefore=${settings.dispatchMinutesBefore}, scope=${settings.dispatchScope}`);
 
   // ─── 3. Mass Schedules ──────────────────────────────────
   console.log('Creating mass schedules...');
@@ -212,6 +212,78 @@ async function main() {
     },
   });
   console.log(`  Parish Admin: ${parishAdmin.email} (${parishAdmin.id})`);
+
+  // ─── 8. Escala: equipes e funções padrão ───────────────
+  // Conjunto padrão de uma paróquia; o admin edita depois (S3/S4). Idempotente
+  // via upsert por chave natural (parishId+name / teamId+name). Sem membros e
+  // sem StaffingRequirement no seed (entram no cadastro). Ver docs/escala.
+  console.log('Creating escala teams and functions...');
+
+  const escalaTeams: Array<{
+    name: string;
+    category:
+      | 'ALTAR_SERVERS'
+      | 'EUCHARISTIC_MINISTERS'
+      | 'READERS'
+      | 'COMMENTATORS'
+      | 'WELCOMING'
+      | 'MUSIC';
+    functions: string[];
+  }> = [
+    {
+      name: 'Coroinhas e Acólitos',
+      category: 'ALTAR_SERVERS',
+      functions: [
+        'Cerimoniário',
+        'Cruz',
+        'Lecionário',
+        'Missal',
+        'Tocha',
+        'Credência',
+        'Líder de Credência',
+        'Sineta',
+      ],
+    },
+    { name: 'MESC', category: 'EUCHARISTIC_MINISTERS', functions: ['MESC'] },
+    { name: 'Leitores', category: 'READERS', functions: ['Leitor', 'Salmista'] },
+    { name: 'Comentaristas', category: 'COMMENTATORS', functions: ['Comentarista'] },
+    { name: 'Acolhida', category: 'WELCOMING', functions: ['Acolhida', 'Coleta'] },
+    { name: 'Música/Canto', category: 'MUSIC', functions: ['Ministério de Canto'] },
+  ];
+
+  let teamCount = 0;
+  let functionCount = 0;
+
+  for (const teamData of escalaTeams) {
+    const team = await prisma.team.upsert({
+      where: { parishId_name: { parishId: parish.id, name: teamData.name } },
+      update: {},
+      create: {
+        parishId: parish.id,
+        name: teamData.name,
+        category: teamData.category,
+      },
+    });
+    teamCount++;
+
+    for (let i = 0; i < teamData.functions.length; i++) {
+      const functionName = teamData.functions[i];
+      await prisma.teamFunction.upsert({
+        where: { teamId_name: { teamId: team.id, name: functionName } },
+        update: {},
+        create: {
+          parishId: parish.id,
+          teamId: team.id,
+          name: functionName,
+          sortOrder: i,
+        },
+      });
+      functionCount++;
+    }
+
+    console.log(`  Team: ${teamData.name} (${teamData.functions.length} functions)`);
+  }
+  console.log(`  Escala seed: ${teamCount} teams, ${functionCount} functions`);
 
   console.log('\nSeed completed successfully!');
 }
