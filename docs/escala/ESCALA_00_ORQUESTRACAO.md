@@ -185,7 +185,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 
 | ID | Status | PR | Data | Notas |
 |----|--------|----|----|-------|
-| S1 | ✅ | #PR_PLACEHOLDER | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
+| S1 | ✅ | #2 | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
 | S2 | 📝 | — | — | Doc pronto. Depende de S1. |
 | S3 | 📝 | — | — | Doc pronto. Depende de S1. Admin-only nesta fase (coordenador ativa em S5/S6). |
 | S4 | ⬜ | — | — | — |
@@ -215,7 +215,7 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
 
-- **2026-07-01 — S1 (Fundação de dados)** · PR #PR_PLACEHOLDER
+- **2026-07-01 — S1 (Fundação de dados)** · PR #2
   - Mesclado o modelo Escala em `prisma/schema.prisma`: 11 modelos
     (`Member`, `Team`, `TeamFunction`, `TeamMembership`, `MembershipFunction`,
     `MassOccurrence`, `StaffingRequirement`, `MemberAvailabilityRule`,
