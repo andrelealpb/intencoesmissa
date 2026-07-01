@@ -80,6 +80,13 @@ model Parish {
   dispatchBatches  DispatchBatch[]
   notices          Notice[]
 
+  // Escala (bounded context aditivo)
+  members              Member[]
+  teams                Team[]
+  massOccurrences      MassOccurrence[]
+  staffingRequirements StaffingRequirement[]
+  assignments          Assignment[]
+
   @@map("parishes")
 }
 
@@ -125,6 +132,10 @@ model MassSchedule {
 
   parish Parish @relation(fields: [parishId], references: [id], onDelete: Cascade)
 
+  // Escala back-relations
+  occurrences          MassOccurrence[]
+  staffingRequirements StaffingRequirement[]
+
   @@map("mass_schedules")
 }
 
@@ -139,6 +150,10 @@ model MassException {
   isActive Boolean @default(true) @map("is_active")
 
   parish Parish @relation(fields: [parishId], references: [id], onDelete: Cascade)
+
+  // Escala back-relations
+  occurrences          MassOccurrence[]
+  staffingRequirements StaffingRequirement[]
 
   @@map("mass_exceptions")
 }
@@ -264,4 +279,309 @@ model Notice {
   parish Parish @relation(fields: [parishId], references: [id], onDelete: Cascade)
 
   @@map("notices")
+}
+
+// ═══════════════════════════════════════════════════════
+// MÓDULO ESCALA (escala de serviço litúrgico)
+// Bounded context aditivo. Ver docs/escala/ESCALA_00_ORQUESTRACAO.md
+// (decisões travadas D1–D11). Convenções herdadas: PK UUID (@db.Uuid),
+// parishId em toda tabela, colunas snake_case (@map), timestamps.
+// ═══════════════════════════════════════════════════════
+
+// ─── Escala Enums ───────────────────────────────────────
+
+enum MinistryCategory {
+  ALTAR_SERVERS         // acólitos / cerimoniários / coroinhas
+  EUCHARISTIC_MINISTERS // MESC
+  READERS               // leitores da palavra
+  COMMENTATORS          // comentaristas
+  WELCOMING             // acolhida
+  TITHE                 // dízimo
+  MUSIC                 // música / canto
+  COLLECTION            // coleta
+  DECORATION            // ornamentação
+  SPECIAL               // trânsito, cozinha, equipes ad hoc de festas/sacramentos
+  OTHER
+}
+
+enum StaffingScope {
+  DEFAULT   // qualquer missa da paróquia
+  WEEKDAY   // todas as missas de um dia da semana (ex: todo domingo)
+  SCHEDULE  // um horário regular específico (ex: só a das 10h de domingo)
+  SOLEMNITY // qualquer ocorrência com isSolemnity=true (inclui domingo elevado)
+  OCCASION  // uma celebração específica/nomeada (uma exceção pontual)
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+  MAYBE
+}
+
+enum AssignmentStatus {
+  SCHEDULED // escalado, aguardando confirmação
+  CONFIRMED // membro confirmou
+  DECLINED  // membro recusou / não poderá
+  CANCELLED // removido pelo coordenador
+}
+
+enum MemberAuthTokenType {
+  MAGIC_LINK
+  OTP
+}
+
+// ─── Pessoas ────────────────────────────────────────────
+
+// Membro = voluntário que serve (coroinha, MESC, leitor...). Uma PESSOA no
+// nível da paróquia. NÃO é um User: autentica por link mágico / OTP (D1).
+model Member {
+  id        String    @id @default(uuid()) @db.Uuid
+  parishId  String    @map("parish_id") @db.Uuid
+  fullName  String    @map("full_name")
+  phone     String // canal primário (WhatsApp); e-mail é opcional nesse público
+  email     String?
+  birthDate DateTime? @map("birth_date") @db.Date // relevante p/ coroinhas; opcional
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  parish            Parish                   @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  memberships       TeamMembership[]
+  availabilityRules MemberAvailabilityRule[]
+  availability      AvailabilityEntry[]
+  assignments       Assignment[]
+  authTokens        MemberAuthToken[]
+
+  @@index([parishId, isActive])
+  @@map("members")
+}
+
+// ─── Equipes e Funções ──────────────────────────────────
+
+model Team {
+  id          String           @id @default(uuid()) @db.Uuid
+  parishId    String           @map("parish_id") @db.Uuid
+  name        String
+  category    MinistryCategory @default(OTHER) // metadado p/ seed/relatório; não restringe
+  description String?
+  isActive    Boolean          @default(true) @map("is_active")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  parish      Parish                @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  functions   TeamFunction[]
+  memberships TeamMembership[]
+  staffing    StaffingRequirement[]
+  assignments Assignment[]
+
+  @@unique([parishId, name])
+  @@map("teams")
+}
+
+// Função dentro de uma equipe: cerimoniário, cruz, tocha, credência, salmista...
+model TeamFunction {
+  id          String   @id @default(uuid()) @db.Uuid
+  parishId    String   @map("parish_id") @db.Uuid
+  teamId      String   @map("team_id") @db.Uuid
+  name        String
+  description String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  team           Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  qualifications MembershipFunction[]
+  staffing       StaffingRequirement[]
+  assignments    Assignment[]
+
+  @@unique([teamId, name])
+  @@index([parishId])
+  @@map("team_functions")
+}
+
+// Vínculo pessoa <-> equipe. É aqui que mora "coordenador" (D2) e o teto (D8).
+model TeamMembership {
+  id                     String   @id @default(uuid()) @db.Uuid
+  parishId               String   @map("parish_id") @db.Uuid
+  teamId                 String   @map("team_id") @db.Uuid
+  memberId               String   @map("member_id") @db.Uuid
+  isCoordinator          Boolean  @default(false) @map("is_coordinator") // autoridade limitada à equipe
+  maxAssignmentsPerMonth Int?     @map("max_assignments_per_month") // teto POR EQUIPE
+  priority               Int      @default(100) // disputa entre equipes: MENOR = mais forte
+  isActive               Boolean  @default(true) @map("is_active")
+  joinedAt               DateTime @default(now()) @map("joined_at")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  team           Team                 @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  member         Member               @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  qualifications MembershipFunction[]
+
+  @@unique([teamId, memberId])
+  @@index([parishId])
+  @@map("team_memberships")
+}
+
+// Qualificação: quais funções este membro pode exercer nesta equipe.
+model MembershipFunction {
+  id           String   @id @default(uuid()) @db.Uuid
+  membershipId String   @map("membership_id") @db.Uuid
+  functionId   String   @map("function_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  membership TeamMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  function   TeamFunction   @relation(fields: [functionId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, functionId])
+  @@map("membership_functions")
+}
+
+// ─── Calendário Materializado ───────────────────────────
+
+// Ocorrência concreta de missa (data + hora reais). Materializada pela Escala
+// (D9); o worker de Intenções segue calculando on-the-fly e não é tocado.
+model MassOccurrence {
+  id                String   @id @default(uuid()) @db.Uuid
+  parishId          String   @map("parish_id") @db.Uuid
+  date              DateTime @db.Date
+  time              String // "HH:mm"
+  title             String? // ex: "Solenidade de Sant'Anna"
+  isSolemnity       Boolean  @default(false) @map("is_solemnity") // re-materialização PRESERVA o flag (D7)
+  sourceScheduleId  String?  @map("source_schedule_id") @db.Uuid // se veio de um horário regular
+  sourceExceptionId String?  @map("source_exception_id") @db.Uuid // se veio de uma exceção
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  parish       Parish              @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  source       MassSchedule?       @relation(fields: [sourceScheduleId], references: [id], onDelete: SetNull)
+  exception    MassException?      @relation(fields: [sourceExceptionId], references: [id], onDelete: SetNull)
+  assignments  Assignment[]
+  availability AvailabilityEntry[]
+
+  @@unique([parishId, date, time])
+  @@index([parishId, date])
+  @@map("mass_occurrences")
+}
+
+// ─── Demanda (staffing por escopo com prioridade — D6) ──
+
+// Prioridade (mais específico vence):
+//   OCCASION > SOLEMNITY > SCHEDULE > WEEKDAY > DEFAULT.
+model StaffingRequirement {
+  id              String        @id @default(uuid()) @db.Uuid
+  parishId        String        @map("parish_id") @db.Uuid
+  teamId          String        @map("team_id") @db.Uuid
+  functionId      String        @map("function_id") @db.Uuid
+  requiredCount   Int           @map("required_count")
+  scope           StaffingScope @default(DEFAULT)
+  weekday         Int? // quando scope=WEEKDAY (0=Dom..6=Sáb)
+  massScheduleId  String?       @map("mass_schedule_id") @db.Uuid // quando scope=SCHEDULE
+  massExceptionId String?       @map("mass_exception_id") @db.Uuid // quando scope=OCCASION
+  isActive        Boolean       @default(true) @map("is_active")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  parish    Parish         @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  team      Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  function  TeamFunction   @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  schedule  MassSchedule?  @relation(fields: [massScheduleId], references: [id], onDelete: Cascade)
+  exception MassException? @relation(fields: [massExceptionId], references: [id], onDelete: Cascade)
+
+  @@index([parishId, teamId, functionId])
+  @@map("staffing_requirements")
+}
+
+// ─── Disponibilidade (nível MEMBRO — D3) ────────────────
+
+// Regra recorrente opcional: pré-preenche as entries quando as ocorrências do
+// mês são materializadas. Ex.: "geralmente sirvo domingo de manhã".
+model MemberAvailabilityRule {
+  id        String   @id @default(uuid()) @db.Uuid
+  parishId  String   @map("parish_id") @db.Uuid
+  memberId  String   @map("member_id") @db.Uuid
+  weekday   Int // 0=Dom..6=Sáb
+  time      String? // "HH:mm"; null = qualquer horário do dia
+  available Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, weekday, time])
+  @@map("member_availability_rules")
+}
+
+// Resposta concreta por ocorrência — fonte de verdade p/ o algoritmo.
+model AvailabilityEntry {
+  id           String             @id @default(uuid()) @db.Uuid
+  parishId     String             @map("parish_id") @db.Uuid
+  memberId     String             @map("member_id") @db.Uuid
+  occurrenceId String             @map("occurrence_id") @db.Uuid
+  status       AvailabilityStatus @default(AVAILABLE)
+  note         String?
+  submittedAt  DateTime           @default(now()) @map("submitted_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  member     Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  occurrence MassOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, occurrenceId])
+  @@index([occurrenceId, status])
+  @@map("availability_entries")
+}
+
+// ─── Escalação ──────────────────────────────────────────
+
+// Um membro colocado numa função de uma ocorrência. "Vaga em aberto" NÃO é
+// linha: é (requiredCount - assignments) calculado. Regime A (D4):
+// unique(occurrence, member) vale sempre. publishedAt separa rascunho de
+// publicado. assignedByUserId (admin) e assignedByMemberId (coordenador) são
+// referências soltas — sem relação a User (realm separado, D1).
+model Assignment {
+  id                 String           @id @default(uuid()) @db.Uuid
+  parishId           String           @map("parish_id") @db.Uuid
+  occurrenceId       String           @map("occurrence_id") @db.Uuid
+  teamId             String           @map("team_id") @db.Uuid
+  functionId         String           @map("function_id") @db.Uuid
+  memberId           String           @map("member_id") @db.Uuid
+  status             AssignmentStatus @default(SCHEDULED)
+  publishedAt        DateTime?        @map("published_at") // null = rascunho
+  assignedByUserId   String?          @map("assigned_by_user_id") @db.Uuid // criado por admin (User)...
+  assignedByMemberId String?          @map("assigned_by_member_id") @db.Uuid // ...ou por coordenador (Member)
+  note               String?
+  confirmedAt        DateTime?        @map("confirmed_at")
+  declinedAt         DateTime?        @map("declined_at")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  parish     Parish         @relation(fields: [parishId], references: [id], onDelete: Cascade)
+  occurrence MassOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  team       Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  function   TeamFunction   @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  member     Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([occurrenceId, memberId])
+  @@index([occurrenceId, functionId])
+  @@index([parishId, teamId])
+  @@map("assignments")
+}
+
+// ─── Auth de Membro (link mágico / OTP — realm separado, D1/D10) ─
+
+// Guarda-se o HASH do token/código, nunca o valor bruto. Uso único + TTL curto.
+model MemberAuthToken {
+  id        String              @id @default(uuid()) @db.Uuid
+  parishId  String              @map("parish_id") @db.Uuid
+  memberId  String              @map("member_id") @db.Uuid
+  type      MemberAuthTokenType
+  tokenHash String              @map("token_hash")
+  expiresAt DateTime            @map("expires_at")
+  usedAt    DateTime?           @map("used_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([memberId])
+  @@map("member_auth_tokens")
 }

@@ -29,3 +29,45 @@ export enum DispatchStatus {
   SENT = "SENT",
   FAILED = "FAILED",
 }
+
+// ─── Escala (liturgical service scheduling) ─────────────
+
+export enum MinistryCategory {
+  ALTAR_SERVERS = "ALTAR_SERVERS",
+  EUCHARISTIC_MINISTERS = "EUCHARISTIC_MINISTERS",
+  READERS = "READERS",
+  COMMENTATORS = "COMMENTATORS",
+  WELCOMING = "WELCOMING",
+  TITHE = "TITHE",
+  MUSIC = "MUSIC",
+  COLLECTION = "COLLECTION",
+  DECORATION = "DECORATION",
+  SPECIAL = "SPECIAL",
+  OTHER = "OTHER",
+}
+
+export enum StaffingScope {
+  DEFAULT = "DEFAULT",
+  WEEKDAY = "WEEKDAY",
+  SCHEDULE = "SCHEDULE",
+  SOLEMNITY = "SOLEMNITY",
+  OCCASION = "OCCASION",
+}
+
+export enum AvailabilityStatus {
+  AVAILABLE = "AVAILABLE",
+  UNAVAILABLE = "UNAVAILABLE",
+  MAYBE = "MAYBE",
+}
+
+export enum AssignmentStatus {
+  SCHEDULED = "SCHEDULED",
+  CONFIRMED = "CONFIRMED",
+  DECLINED = "DECLINED",
+  CANCELLED = "CANCELLED",
+}
+
+export enum MemberAuthTokenType {
+  MAGIC_LINK = "MAGIC_LINK",
+  OTP = "OTP",
+}
