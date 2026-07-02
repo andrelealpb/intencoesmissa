@@ -186,7 +186,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | ID | Status | PR | Data | Notas |
 |----|--------|----|----|-------|
 | S1 | ✅ | #2 | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
-| M1a | ✅ | PR-M1a | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b). |
+| M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b). |
 | M1b | ⬜ | — | — | Drift schema↔migração (R6). PR isolado, só schema/migração. |
 | S2 | 📝 | — | — | Doc pronto. Depende de S1. |
 | S3 | 📝 | — | — | Doc pronto. Depende de S1. Admin-only nesta fase (coordenador ativa em S5/S6). |
@@ -217,7 +217,7 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
 
-- **2026-07-02 — M1a (Manutenção: CI + base verde)** · PR-M1a
+- **2026-07-02 — M1a (Manutenção: CI + base verde)** · PR #3
   - **Workstream A (CI, R5):** `.github/workflows/ci.yml` — removido o filtro de
     `branches` do gatilho `pull_request` (CI passa a rodar em PR para **qualquer**
     base, inclusive branches `claude/**`; nunca mais fica OFF em silêncio). `on.push`
@@ -288,6 +288,6 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 | R2 | **Teto global por pessoa** (soma das equipes). Não modelado (D8). | Adicionar *soft cap* no `Member` só se aparecer sobrecarga real. |
 | R3 | **Regime B** (rascunhos sobrepostos, `unique` só no publicado via índice parcial). | Só se o atrito entre coordenadores em rascunho incomodar. |
 | R4 | **Convergência do calendário.** No futuro, o worker das Intenções poderia ler de `MassOccurrence`. | Opcional, fora do MVP. Não fazer sem aprovação. |
-| R5 | **CI desligado.** O gatilho `pull_request` filtrava por base `main`; PRs empilhados fora de `main`/`develop` (e branches `claude/*`) nunca disparavam o CI. | ✅ **Resolvido em PR-M1a** — filtro de `branches` removido do `pull_request`; CI roda em toda PR. |
+| R5 | **CI desligado.** O gatilho `pull_request` filtrava por base `main`; PRs empilhados fora de `main`/`develop` (e branches `claude/*`) nunca disparavam o CI. | ✅ **Resolvido em PR-M1a (#3)** — filtro de `branches` removido do `pull_request`; CI roda em toda PR. |
 | R6 | **Drift schema↔migração.** Prisma quer embutir `DROP DEFAULT` em `parishes`/`notices`/`dispatch_batches` (tabelas de Intenções). | ⏳ **Aberto — PR-M1b.** Fora do escopo de PR-M1a (que não toca schema/migração). |
-| R7 | **Base não-verde.** Falhas pré-existentes de lint/typecheck/test (e lacuna de build do `shared` no CI) impediam o "sem regressão" automatizado. | ✅ **Resolvido em PR-M1a** — B1–B4 + build do `shared` + configs de ESLint; lint/typecheck/test verdes em todos os apps. |
+| R7 | **Base não-verde.** Falhas pré-existentes de lint/typecheck/test (e lacuna de build do `shared` no CI) impediam o "sem regressão" automatizado. | ✅ **Resolvido em PR-M1a (#3)** — B1–B4 + build do `shared` + configs de ESLint; lint/typecheck/test verdes em todos os apps. |
