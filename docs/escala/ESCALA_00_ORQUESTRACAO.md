@@ -186,8 +186,8 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | ID | Status | PR | Data | Notas |
 |----|--------|----|----|-------|
 | S1 | ✅ | #2 | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
-| M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b). |
-| M1b | ⬜ | — | — | Drift schema↔migração (R6). PR isolado, só schema/migração. |
+| M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b (#4)). |
+| M1b | ✅ | #4 | 2026-07-02 | Drift R6 reconciliado só no `schema.prisma` (sem migração, sem `ALTER` em Intenções): `@default([])` em 4 arrays + `@default(dbgenerated("gen_random_uuid()"))` em `notices.id`. `migrate dev` → "Already in sync"; deploy zerado limpo; seed idempotente + smoke da Prisma Client OK. |
 | S2 | 📝 | — | — | Doc pronto. Depende de S1. |
 | S3 | 📝 | — | — | Doc pronto. Depende de S1. Admin-only nesta fase (coordenador ativa em S5/S6). |
 | S4 | ⬜ | — | — | — |
@@ -216,6 +216,35 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-02 — M1b (Manutenção: drift schema↔migração)** · PR #4
+  - **Workstream C (drift, R6):** com todas as 12 migrações aplicadas numa base,
+    `prisma migrate dev --create-only` propunha `DROP DEFAULT` em 5 colunas de
+    **tabelas de Intenções** — o drift que a S1 tirou da migração dela mas que
+    seguia no repo. Diagnóstico coluna a coluna (defaults reais conferidos no
+    `information_schema`):
+    - `parishes.dispatch_phones` (`'{}'::text[]`), `parishes.dispatch_groups`,
+      `dispatch_batches.sent_to_phones`, `notices.mass_times` (`ARRAY[]::text[]`):
+      default de banco **útil e vivo** (Prisma omite o campo em create parcial →
+      banco preenche `[]`). Decisão: **declarar `@default([])` no schema** para
+      casar schema↔banco. Zero mudança no banco.
+    - `notices.id` (`gen_random_uuid()`): default de banco **redundante** (só o
+      `notices` o tinha; os demais `id` geram uuid client-side via `@default(uuid())`).
+      Decisão: **`@default(dbgenerated("gen_random_uuid()"))`** — declara o default
+      existente no schema em vez de dropá-lo, mantendo o viés de **não `ALTER`ar
+      tabela de Intenções**. Banco intocado.
+    - `parishes.dispatch_emails` e `dispatch_batches.sent_to_emails` **não** têm
+      default no banco e **não** driftam — deixados como estão (adicionar
+      `@default([])` neles criaria drift novo).
+  - **Resultado:** reconciliação **100% no `schema.prisma`, sem nenhuma migração
+    nova e sem um único `ALTER`** em tabela de Intenções. `prisma migrate dev`
+    passou a reportar **"Already in sync, no schema change or pending migration
+    was found."**; `migrate deploy` em base zerada aplica as 12 migrações limpo.
+  - **Intenções sem regressão:** `seed.ts` roda limpo e idempotente (2×: 6 equipes
+    / 15 funções / 14 tipos estáveis); smoke pela Prisma Client — `Notice.create`
+    sem `id` → banco gera uuid válido; `massTimes`/`dispatchPhones`/`dispatchGroups`
+    default `[]`. Caminho de despacho não tocado (D9).
+  - Orquestrador: **R6 resolvido**; Status `M1b ✅`; este Changelog.
 
 - **2026-07-02 — M1a (Manutenção: CI + base verde)** · PR #3
   - **Workstream A (CI, R5):** `.github/workflows/ci.yml` — removido o filtro de
@@ -247,7 +276,7 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
   - **Verificação:** `lint`, `typecheck`, `test` verdes em todos os apps (web 8/8,
     worker 8/8, api 29/29). Intenções sem regressão (testes do worker de despacho e
     da API verdes). **Não** tocou `prisma/schema.prisma` nem migrações (drift R6 fica
-    para PR-M1b).
+    para PR-M1b (#4)).
   - Nota de ambiente: engines do Prisma baixadas manualmente por bloqueio de rede
     do sandbox (não afeta o CI, que tem internet direta).
 
@@ -289,5 +318,5 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 | R3 | **Regime B** (rascunhos sobrepostos, `unique` só no publicado via índice parcial). | Só se o atrito entre coordenadores em rascunho incomodar. |
 | R4 | **Convergência do calendário.** No futuro, o worker das Intenções poderia ler de `MassOccurrence`. | Opcional, fora do MVP. Não fazer sem aprovação. |
 | R5 | **CI desligado.** O gatilho `pull_request` filtrava por base `main`; PRs empilhados fora de `main`/`develop` (e branches `claude/*`) nunca disparavam o CI. | ✅ **Resolvido em PR-M1a (#3)** — filtro de `branches` removido do `pull_request`; CI roda em toda PR. |
-| R6 | **Drift schema↔migração.** Prisma quer embutir `DROP DEFAULT` em `parishes`/`notices`/`dispatch_batches` (tabelas de Intenções). | ⏳ **Aberto — PR-M1b.** Fora do escopo de PR-M1a (que não toca schema/migração). |
+| R6 | **Drift schema↔migração.** Prisma quer embutir `DROP DEFAULT` em `parishes`/`notices`/`dispatch_batches` (tabelas de Intenções). | ✅ **Resolvido em PR-M1b (#4).** Reconciliado 100% no `schema.prisma`, **sem migração e sem `ALTER`** em tabela de Intenções: `@default([])` nas 4 colunas de array com default no banco (`parishes.dispatch_phones`/`dispatch_groups`, `dispatch_batches.sent_to_phones`, `notices.mass_times`) e `@default(dbgenerated("gen_random_uuid()"))` em `notices.id` (default de banco redundante). `migrate dev` → "Already in sync"; `deploy` em base zerada limpo; banco intocado. |
 | R7 | **Base não-verde.** Falhas pré-existentes de lint/typecheck/test (e lacuna de build do `shared` no CI) impediam o "sem regressão" automatizado. | ✅ **Resolvido em PR-M1a (#3)** — B1–B4 + build do `shared` + configs de ESLint; lint/typecheck/test verdes em todos os apps. |
