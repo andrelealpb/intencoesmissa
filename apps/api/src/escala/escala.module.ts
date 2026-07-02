@@ -7,6 +7,8 @@ import { OccurrenceService } from "./occurrence.service";
 import { CadastroController } from "./cadastro.controller";
 import { CadastroService } from "./cadastro.service";
 import { EscalaAccessService } from "./escala-access.service";
+import { MemberPortalController } from "./member-portal.controller";
+import { AvailabilityService } from "./availability.service";
 import { MemberAuthController } from "./auth/member-auth.controller";
 import { MemberAuthService } from "./auth/member-auth.service";
 import { MemberAuthTokenService } from "./auth/member-auth-token.service";
@@ -22,6 +24,8 @@ import { memberAuthConfig } from "./auth/member-auth.config";
  * - S5: realm de auth de membro (OTP/link magico), JWT de membro isolado
  *   (`MEMBER_JWT_SECRET`), guard composto e ramo de coordenador ativado no
  *   `EscalaAccessService` (autorizacao lida do banco).
+ * - S6: portal do voluntario (`/escala/me/*` sob `MemberJwtGuard`) —
+ *   disponibilidade efetiva via `resolveAvailability`, regras recorrentes.
  *
  * O `JwtModule` local assina/verifica o JWT de MEMBRO com secret proprio,
  * scopeado a este modulo — nunca colide com o `JwtService` do admin (D1).
@@ -36,11 +40,17 @@ import { memberAuthConfig } from "./auth/member-auth.config";
     }),
     AdminModule,
   ],
-  controllers: [EscalaController, CadastroController, MemberAuthController],
+  controllers: [
+    EscalaController,
+    CadastroController,
+    MemberAuthController,
+    MemberPortalController,
+  ],
   providers: [
     OccurrenceService,
     CadastroService,
     EscalaAccessService,
+    AvailabilityService,
     MemberAuthService,
     MemberAuthTokenService,
     MemberAuthDeliveryService,

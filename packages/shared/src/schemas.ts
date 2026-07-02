@@ -345,6 +345,60 @@ export const memberAuthVerifySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Escala — Portal de disponibilidade do membro (S6)
+// ---------------------------------------------------------------------------
+
+// Mês no formato YYYY-MM (query de /escala/me/occurrences).
+export const monthSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}$/, "Mes deve estar no formato YYYY-MM")
+  .refine((value) => {
+    const month = Number(value.slice(5, 7));
+    return month >= 1 && month <= 12;
+  }, "Mes invalido");
+
+// Horário "HH:mm" (00:00..23:59). Reusado por regra recorrente.
+const timeOfDaySchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Horario deve estar no formato HH:mm");
+
+// PUT /escala/me/availability — upsert do desvio explícito. `CLEAR` apaga o
+// entry (volta a valer a regra). `MAYBE` não é exposto na UI (U4).
+export const memberAvailabilityUpsertSchema = z.object({
+  occurrenceId: uuidSchema,
+  status: z.enum(["AVAILABLE", "UNAVAILABLE", "CLEAR"]),
+});
+
+// PUT /escala/me/rules — replace-set das regras recorrentes do membro.
+// `time` ausente/null = qualquer horário do dia (dia inteiro).
+export const memberAvailabilityRuleSchema = z.object({
+  weekday: z.number().int().min(0).max(6, "Dia da semana deve ser 0..6"),
+  time: timeOfDaySchema.nullish(),
+  available: z.boolean(),
+});
+
+export const memberAvailabilityRulesSchema = z.object({
+  rules: z
+    .array(memberAvailabilityRuleSchema)
+    .max(50, "Numero de regras excede o limite")
+    .superRefine((rules, ctx) => {
+      // Espelha o @@unique([memberId, weekday, time]) do schema: sem duplicatas.
+      const seen = new Set<string>();
+      rules.forEach((rule, index) => {
+        const key = `${rule.weekday}|${rule.time ?? ""}`;
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [index],
+            message: "Regra duplicada para o mesmo dia/horario",
+          });
+        }
+        seen.add(key);
+      });
+    }),
+});
+
+// ---------------------------------------------------------------------------
 // Inferred types (useful for forms / API handlers)
 // ---------------------------------------------------------------------------
 
@@ -379,3 +433,14 @@ export type StaffingRequirementCreateInput = z.infer<
 export type MemberAuthChannel = z.infer<typeof memberAuthChannelSchema>;
 export type MemberAuthRequestInput = z.infer<typeof memberAuthRequestSchema>;
 export type MemberAuthVerifyInput = z.infer<typeof memberAuthVerifySchema>;
+
+// Escala — Portal de disponibilidade (S6)
+export type MemberAvailabilityUpsertInput = z.infer<
+  typeof memberAvailabilityUpsertSchema
+>;
+export type MemberAvailabilityRuleInput = z.infer<
+  typeof memberAvailabilityRuleSchema
+>;
+export type MemberAvailabilityRulesInput = z.infer<
+  typeof memberAvailabilityRulesSchema
+>;

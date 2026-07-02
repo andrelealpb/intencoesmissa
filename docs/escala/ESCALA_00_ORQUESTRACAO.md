@@ -192,7 +192,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S3 | ✅ | #7 | 2026-07-02 | Cadastro backend admin-only sob `/admin/escala/*`: CRUD de Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement no módulo existente `apps/api/src/escala` (`CadastroController`/`CadastroService`, convive com o `EscalaController` de S2). `parishId` sempre do JWT; ownership por paróquia (404 não vaza); P2002→409; qualificação valida função da equipe (400); soft-delete p/ entidades com histórico de assignment. Schemas Zod em `packages/shared` (`staffingRequirementSchema` = discriminated union por escopo). `EscalaAccessService` com gancho de coordenador `TODO(S5)`. Função pura `resolveStaffing` + testes dos 5 escopos e desempate por função (D6). Sem schema/migração novos (reusa tabelas da S1). |
 | S4 | ⬜ | — | — | — |
 | S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
-| S6 | ⬜ | — | — | — |
+| S6 | ✅ | #TBD | 2026-07-02 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. |
 | S7 | ⬜ | — | — | — |
 | S8 | ⬜ | — | — | — |
 | S9 | ⬜ | — | — | — |
@@ -216,6 +216,43 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-02 — S6 (Portal de disponibilidade)** · PR #TBD
+  - **Resolvedor puro `resolveAvailability`** (`apps/api/src/escala/resolve-availability.ts`):
+    precedência `explicit > rule > default`, devolvendo também a `source`
+    (`explicit`/`rule`/`default`). Regra de horário específico vence a de dia
+    inteiro (`time=null`); `default` = "não informou" (opt-in U1/U2); status
+    binário na UI (U4 — `MAYBE` no enum resolve como `UNAVAILABLE` efetivo).
+    Unit-testado nas 3 origens + casamento de regra (hora específica e dia
+    inteiro) + precedência entre elas.
+  - **Refino consciente do schema (U3):** a regra recorrente **não** materializa
+    entries. `AvailabilityEntry` guarda **só desvios** (o membro marca um slot
+    sem regra ou desmarca um que a regra deixava disponível); a disponibilidade
+    efetiva é calculada pelo resolvedor sob demanda. Elimina o bug de "mudei a
+    regra e as entries antigas ficaram velhas". A S7 reusa o mesmo resolvedor.
+  - **Endpoints do realm de membro** (`MemberPortalController`, sob
+    `MemberJwtGuard`, escopo `req.member`): `GET /escala/me` (perfil),
+    `GET /escala/me/occurrences?month=YYYY-MM` (ocorrências + disponibilidade
+    efetiva; mês não materializado → lista vazia), `PUT /escala/me/availability`
+    (`AVAILABLE`/`UNAVAILABLE`/`CLEAR`; `CLEAR` apaga o entry e volta a valer a
+    regra), `GET`/`PUT /escala/me/rules` (replace-set). `memberId`/`parishId`
+    **sempre do JWT**, nunca do path/body; ocorrência de outra paróquia → 404
+    (isolamento testado). Rate limit nas escritas (`ThrottlerGuard`).
+  - **Frontend `/p/{slug}/escala/*`** (mobile-first, sessão de membro em cookie
+    próprio, separada do NextAuth do admin): `entrar` (login OTP em dois passos
+    + callback do link mágico via `GET /escala/auth/magic`, com erros
+    **genéricos** — anti-enumeração da S5 preservada); visão do mês com toggle
+    binário Disponível/Indisponível e **autosave por toggle** (indicador
+    "Salvo"), selo de solenidade, seletor de mês, estado vazio amigável; editor
+    de regra recorrente (replace-set) que ao salvar re-preenche o mês.
+  - **Zod em `packages/shared`:** `monthSchema`, `memberAvailabilityUpsertSchema`,
+    `memberAvailabilityRuleSchema`/`memberAvailabilityRulesSchema` (replace-set
+    sem duplicatas, espelhando o `@@unique([memberId, weekday, time])`).
+  - **Sem schema/migração novos** (reusa `AvailabilityEntry`/`MemberAvailabilityRule`
+    da S1). Intenções sem regressão; `lint`/`typecheck`/`test` verdes
+    (104 testes na API), `web build` OK, `prisma validate` OK.
+  - Fora de escopo (não implementado, por design): tela de coordenador,
+    visualização de escala/atribuições, edição de `priority` pelo membro.
 
 - **2026-07-02 — S5 (Auth de membro)** · PR #8
   - **Segundo realm de autenticação** (D1), 100% aditivo, em Postgres puro (D10),
