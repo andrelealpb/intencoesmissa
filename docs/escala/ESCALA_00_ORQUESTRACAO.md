@@ -186,7 +186,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | ID | Status | PR | Data | Notas |
 |----|--------|----|----|-------|
 | S1 | ✅ | #2 | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
-| M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b). |
+| M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b (#4)). |
 | M1b | ✅ | #4 | 2026-07-02 | Drift R6 reconciliado só no `schema.prisma` (sem migração, sem `ALTER` em Intenções): `@default([])` em 4 arrays + `@default(dbgenerated("gen_random_uuid()"))` em `notices.id`. `migrate dev` → "Already in sync"; deploy zerado limpo; seed idempotente + smoke da Prisma Client OK. |
 | S2 | 📝 | — | — | Doc pronto. Depende de S1. |
 | S3 | 📝 | — | — | Doc pronto. Depende de S1. Admin-only nesta fase (coordenador ativa em S5/S6). |
@@ -276,7 +276,7 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
   - **Verificação:** `lint`, `typecheck`, `test` verdes em todos os apps (web 8/8,
     worker 8/8, api 29/29). Intenções sem regressão (testes do worker de despacho e
     da API verdes). **Não** tocou `prisma/schema.prisma` nem migrações (drift R6 fica
-    para PR-M1b).
+    para PR-M1b (#4)).
   - Nota de ambiente: engines do Prisma baixadas manualmente por bloqueio de rede
     do sandbox (não afeta o CI, que tem internet direta).
 
