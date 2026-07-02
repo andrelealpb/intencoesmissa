@@ -38,6 +38,7 @@ const mockPrisma = {
   },
   teamMembership: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -66,7 +67,12 @@ const mockPrisma = {
   ),
 };
 
-const ADMIN: AdminActor = { id: "u1", role: "PARISH_ADMIN", parishId: "p1" };
+const ADMIN: AdminActor = {
+  kind: "admin",
+  userId: "u1",
+  role: "PARISH_ADMIN",
+  parishId: "p1",
+};
 
 function p2002(): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError("Unique constraint", {
@@ -95,7 +101,12 @@ describe("CadastroService", () => {
 
   describe("authorization", () => {
     it("nega ator sem role PARISH_ADMIN (Forbidden)", async () => {
-      const intruder: AdminActor = { id: "x", role: "OTHER", parishId: "p1" };
+      const intruder: AdminActor = {
+        kind: "admin",
+        userId: "x",
+        role: "OTHER",
+        parishId: "p1",
+      };
       await expect(service.listTeams(intruder)).rejects.toThrow(
         ForbiddenException,
       );

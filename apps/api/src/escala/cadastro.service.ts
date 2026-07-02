@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { StaffingScope } from "@missas/shared";
@@ -324,6 +325,13 @@ export class CadastroService {
   ) {
     const parishId = await this.access.assertCanManageTeam(actor, teamId);
 
+    // Nomear coordenador é operação de nível paróquia (matriz S5): só admin.
+    if (data.isCoordinator && !this.access.isAdmin(actor)) {
+      throw new ForbiddenException(
+        "Apenas o administrador da paroquia pode definir coordenadores",
+      );
+    }
+
     // O membro precisa existir e pertencer à mesma paróquia.
     await this.ensureMemberOwnership(parishId, data.memberId);
 
@@ -352,6 +360,14 @@ export class CadastroService {
     data: TeamMembershipUpdateInput,
   ) {
     const membership = await this.loadMembershipForActor(actor, id);
+
+    // Alterar `isCoordinator` é nível paróquia (matriz S5): só admin.
+    if (data.isCoordinator !== undefined && !this.access.isAdmin(actor)) {
+      throw new ForbiddenException(
+        "Apenas o administrador da paroquia pode definir coordenadores",
+      );
+    }
+
     return this.prisma.teamMembership.update({
       where: { id: membership.id },
       data: {

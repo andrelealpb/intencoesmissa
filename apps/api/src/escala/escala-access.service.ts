@@ -6,23 +6,30 @@ import {
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
- * Ator administrativo autenticado (realm User). Extraído do JWT pelo controller.
- * O realm de Membro (coordenador) é um segundo ator que chega em S5 (D1).
+ * Ator autenticado do módulo Escala, normalizado pelo `EscalaAuthGuard` a
+ * partir de qualquer um dos dois realms (D1):
+ * - `admin`  → `User` (JWT de admin), carrega `role`.
+ * - `member` → `Member` (JWT de membro), pode ser coordenador de equipes.
  */
-export interface AdminActor {
-  id: string;
-  role: string;
-  parishId: string | null;
+export interface EscalaActor {
+  kind: "admin" | "member";
+  userId?: string;
+  memberId?: string;
+  role?: string;
+  parishId: string;
 }
 
+/** @deprecated Use `EscalaActor`. Mantido para compat de nomes na S3. */
+export type AdminActor = EscalaActor;
+
 /**
- * Costura de autorização do módulo Escala (D2).
+ * Costura de autorização do módulo Escala (D2). A regra é **lida do banco a
+ * cada request** — se o pároco revogar `isCoordinator`, o efeito é imediato; o
+ * JWT nunca é fonte de autorização.
  *
- * Hoje: só `User PARISH_ADMIN` dono da paróquia autoriza. O ponto de extensão
- * do coordenador (`Member` com `TeamMembership.isCoordinator=true` naquela
- * equipe) está marcado com `TODO(S5)` e só entra em vigor quando o realm de
- * membro existir (S5/S6). Os serviços chamam estes métodos em vez de embutir a
- * regra — quando o membro chegar, só este service muda.
+ * - `assertCanManageParish`: operações de nível paróquia → **só admin**.
+ * - `assertCanManageTeam`: operações de uma equipe → admin **ou** coordenador
+ *   ativo daquela equipe (e só daquela).
  */
 @Injectable()
 export class EscalaAccessService {
@@ -30,44 +37,66 @@ export class EscalaAccessService {
 
   /**
    * Autoriza operações no escopo da paróquia (recursos não ligados a uma
-   * equipe específica, ex.: Member). Retorna o `parishId` efetivo do ator.
+   * equipe específica, ex.: Team, Member). **Exclusivo do admin** — um
+   * coordenador (Member) nunca cria equipes nem pessoas. Retorna o `parishId`.
    */
-  assertCanManageParish(actor: AdminActor): string {
-    // TODO(S5): quando o realm de membro existir, um coordenador (Member) NÃO
-    // deve passar aqui para recursos de paróquia — apenas para a própria equipe
-    // (ver assertCanManageTeam). Este ramo permanece exclusivo do PARISH_ADMIN.
-    if (actor.role !== "PARISH_ADMIN" || !actor.parishId) {
+  assertCanManageParish(actor: EscalaActor): string {
+    if (actor.kind !== "admin" || actor.role !== "PARISH_ADMIN" || !actor.parishId) {
       throw new ForbiddenException("Acesso negado ao modulo Escala");
     }
     return actor.parishId;
   }
 
   /**
-   * Autoriza operações sobre uma equipe específica. Garante que a equipe
-   * pertence à paróquia do ator (404 caso contrário — não vaza existência).
-   * Retorna o `parishId` efetivo do ator.
+   * Autoriza operações sobre uma equipe específica. A equipe precisa pertencer
+   * à paróquia do ator (404 caso contrário — não vaza existência). Coordenador
+   * só passa na **própria** equipe (senão 403). Retorna o `parishId` efetivo.
    */
   async assertCanManageTeam(
-    actor: AdminActor,
+    actor: EscalaActor,
     teamId: string,
   ): Promise<string> {
-    // PARISH_ADMIN dono da paróquia → via ativa hoje.
-    const parishId = this.assertCanManageParish(actor);
+    if (!actor.parishId) {
+      throw new ForbiddenException("Acesso negado ao modulo Escala");
+    }
 
     const team = await this.prisma.team.findUnique({
       where: { id: teamId },
       select: { parishId: true },
     });
-    if (!team || team.parishId !== parishId) {
+    if (!team || team.parishId !== actor.parishId) {
       throw new NotFoundException("Equipe nao encontrada");
     }
 
-    // TODO(S5): coordenador. Quando o realm de membro existir, autorizar também
-    // um Member cujo TeamMembership desta equipe tenha isCoordinator=true —
-    // limitado EXCLUSIVAMENTE a esta equipe (não a outras nem a recursos de
-    // paróquia). A interface (actor + teamId) já está pronta para esse ramo;
-    // nada além deste método precisa mudar.
+    // Admin PARISH_ADMIN dono da paróquia → autorizado em tudo.
+    if (actor.kind === "admin") {
+      if (actor.role !== "PARISH_ADMIN") {
+        throw new ForbiddenException("Acesso negado ao modulo Escala");
+      }
+      return actor.parishId;
+    }
 
-    return parishId;
+    // Coordenador: vínculo verificado NO BANCO (não no JWT). Autoridade
+    // limitada EXCLUSIVAMENTE a esta equipe.
+    const coordinator = await this.prisma.teamMembership.findFirst({
+      where: {
+        teamId,
+        memberId: actor.memberId,
+        isCoordinator: true,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    if (!coordinator) {
+      throw new ForbiddenException("Voce nao coordena esta equipe");
+    }
+
+    return actor.parishId;
+  }
+
+  /** Verdadeiro só para o realm admin — usado por operações sensíveis de nível
+   * equipe que ainda são exclusivas do admin (ex.: nomear coordenador). */
+  isAdmin(actor: EscalaActor): boolean {
+    return actor.kind === "admin" && actor.role === "PARISH_ADMIN";
   }
 }

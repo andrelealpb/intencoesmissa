@@ -9,11 +9,9 @@ import {
   Body,
   Req,
   UseGuards,
-  ForbiddenException,
+  UnauthorizedException,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { RolesGuard } from "../auth/roles.guard";
-import { Roles } from "../auth/roles.decorator";
+import { EscalaAuthGuard } from "./auth/escala-auth.guard";
 import {
   teamSchema,
   teamUpdateSchema,
@@ -28,26 +26,18 @@ import {
   staffingRequirementCreateSchema,
 } from "@missas/shared";
 import { CadastroService } from "./cadastro.service";
-import type { AdminActor } from "./escala-access.service";
+import type { EscalaActor } from "./escala-access.service";
 
 interface AuthenticatedRequest {
-  user: {
-    id: string;
-    email: string;
-    role: string;
-    parishId: string | null;
-  };
+  // Normalizado pelo EscalaAuthGuard (admin OU membro).
+  actor?: EscalaActor;
 }
 
-function getActor(req: AuthenticatedRequest): AdminActor {
-  if (!req.user.parishId) {
-    throw new ForbiddenException("Usuario nao vinculado a uma paroquia");
+function getActor(req: AuthenticatedRequest): EscalaActor {
+  if (!req.actor || !req.actor.parishId) {
+    throw new UnauthorizedException("Ator nao autenticado");
   }
-  return {
-    id: req.user.id,
-    role: req.user.role,
-    parishId: req.user.parishId,
-  };
+  return req.actor;
 }
 
 function parseBool(value?: string): boolean | undefined {
@@ -58,16 +48,17 @@ function parseBool(value?: string): boolean | undefined {
 }
 
 /**
- * Cadastro backend do módulo Escala (S3). Todos os endpoints são admin-only
- * (`PARISH_ADMIN`) nesta fase — a via de coordenador entra em S5/S6 via
- * `EscalaAccessService`. A autorização mora no service (a costura), não aqui.
+ * Cadastro backend do módulo Escala. Autenticado pelo `EscalaAuthGuard`
+ * composto (admin OU membro). A decisão de acesso mora no `EscalaAccessService`
+ * (a costura, lida do banco): operações de nível paróquia (Team, Member) só
+ * passam para admin; operações de equipe (functions, memberships, qualificações,
+ * staffing) passam também para o coordenador **daquela** equipe (matriz S5).
  *
  * Convive com o `EscalaController` (S2, ocorrências) sob o mesmo prefixo
  * `admin/escala`, em sub-rotas distintas.
  */
 @Controller("admin/escala")
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles("PARISH_ADMIN")
+@UseGuards(EscalaAuthGuard)
 export class CadastroController {
   constructor(private cadastro: CadastroService) {}
 
