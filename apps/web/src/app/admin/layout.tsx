@@ -18,6 +18,11 @@ const navItems = [
   { href: '/admin/public-link', label: 'Link do Fiel' },
 ];
 
+const escalaNavItems = [
+  { href: '/admin/escala/equipes', label: 'Equipes' },
+  { href: '/admin/escala/membros', label: 'Membros' },
+];
+
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -67,8 +72,21 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <h2 className="font-bold text-lg text-gray-800">Admin Paróquia</h2>
           <p className="text-sm text-gray-500 truncate">{session.user?.email}</p>
         </div>
-        <nav className="p-2 flex-1">
+        <nav className="p-2 flex-1 overflow-y-auto">
           {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="block px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+              onClick={() => setSidebarOpen(false)}
+            >
+              {item.label}
+            </Link>
+          ))}
+          <p className="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Escala
+          </p>
+          {escalaNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
