@@ -190,7 +190,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | M1b | ✅ | #4 | 2026-07-02 | Drift R6 reconciliado só no `schema.prisma` (sem migração, sem `ALTER` em Intenções): `@default([])` em 4 arrays + `@default(dbgenerated("gen_random_uuid()"))` em `notices.id`. `migrate dev` → "Already in sync"; deploy zerado limpo; seed idempotente + smoke da Prisma Client OK. |
 | S2 | ✅ | #6 | 2026-07-02 | `OccurrenceService.materialize(parishId, from, to)` idempotente (upsert por `@@unique([parishId, date, time])`, preserva `isSolemnity`/`title` — D7); endpoints admin `POST materialize` / `GET list` / `PATCH :id`. Regra de missas **replicada** (não importada do worker — D9): exceção vence regular no mesmo horário. Convenção de solenidade: **(a)** — materializa `isSolemnity=false`, elevação manual via PATCH. Sem schema/migração novos. |
 | S3 | ✅ | #7 | 2026-07-02 | Cadastro backend admin-only sob `/admin/escala/*`: CRUD de Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement no módulo existente `apps/api/src/escala` (`CadastroController`/`CadastroService`, convive com o `EscalaController` de S2). `parishId` sempre do JWT; ownership por paróquia (404 não vaza); P2002→409; qualificação valida função da equipe (400); soft-delete p/ entidades com histórico de assignment. Schemas Zod em `packages/shared` (`staffingRequirementSchema` = discriminated union por escopo). `EscalaAccessService` com gancho de coordenador `TODO(S5)`. Função pura `resolveStaffing` + testes dos 5 escopos e desempate por função (D6). Sem schema/migração novos (reusa tabelas da S1). |
-| S4 | ⬜ | — | — | — |
+| S4 | ✅ | #10 | 2026-07-02 | Frontend admin do cadastro sob `/admin/escala/*` (Next.js App Router, espelhando o design do painel existente — `useSession` + `apiAuthFetch`, sem UI nova). Páginas: **Equipes** (lista/CRUD + botão opcional **Abrir mês** → materialização da S2), **detalhe da equipe** com abas Funções / Vínculos / Demanda, e **Membros** (nível paróquia, busca + paginação). Vínculos expõem `isCoordinator`, teto por equipe e `priority`; qualificações via replace-set das funções da equipe. Demanda: o alvo acompanha o escopo (WEEKDAY→dia, SCHEDULE→horário, OCCASION→exceção; DEFAULT/SOLEMNITY→nenhum) e combinação inválida fica **não submetível**. Warning de duplicata de telefone (201) exibido sem bloquear. `parishId` nunca no request (vem do JWT). Sem backend novo, sem UI de coordenador (S8). Web verde: typecheck/lint/test + `next build` das 3 rotas. |
 | S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
 | S6 | ✅ | #9 | 2026-07-02 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. |
 | S7 | ⬜ | — | — | — |
@@ -216,6 +216,38 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-02 — S4 (Cadastro — Frontend admin)** · PR #10
+  - Páginas de administração do módulo Escala sob `/admin/escala/*` no
+    `apps/web` (Next.js App Router), consumindo os endpoints da S3. **Espelham
+    o design do painel admin existente** (mesmo idioma de `masses`/`emoluments`:
+    client component + `useSession` + `apiAuthFetch`, tabelas/cartões Tailwind,
+    formulário-em-cima/lista-embaixo) — nenhuma UI nova inventada.
+  - **`/admin/escala/equipes`** — lista/CRUD de equipes (nome, categoria,
+    descrição, ativa), com contadores de funções/membros e link para o detalhe.
+    Inclui o botão opcional **“Abrir mês”**, que chama a materialização da S2
+    (`POST /admin/escala/occurrences/materialize`) e exibe o resumo
+    `criadas/atualizadas/total`.
+  - **`/admin/escala/equipes/[teamId]`** — detalhe da equipe em três abas:
+    **Funções** (CRUD, `sortOrder`), **Vínculos** (`TeamMembership` com
+    `isCoordinator`, teto/mês — D8 — e `priority` — D5 — mais editor inline de
+    **qualificações** em *replace-set* das funções da equipe) e **Demanda**
+    (`StaffingRequirement`).
+  - **Demanda — alvo acompanha o escopo** (espelha o padrão do `Emolument`):
+    `WEEKDAY→dia da semana`, `SCHEDULE→horário` (lista de `MassSchedule`),
+    `OCCASION→exceção` (lista de `MassException`); `DEFAULT`/`SOLEMNITY` sem
+    alvo. Troca de escopo zera o alvo anterior e **combinação inválida deixa o
+    botão de salvar desabilitado** (não submetível) — além da validação Zod do
+    backend.
+  - **`/admin/escala/membros`** — cadastro de membros no nível paróquia com
+    busca (`?q=`), filtro de ativos e paginação. O **aviso de possível
+    duplicata de telefone** (resposta 201 com `warning`) é exibido **sem
+    bloquear** o cadastro.
+  - `parishId` **nunca** vai no request (derivado do JWT no backend). **Sem
+    backend novo**, **sem UI de coordenador** (é S8) e sem tocar Intenções.
+    Navegação: seção “Escala” adicionada à sidebar do admin.
+  - Verificação (apps/web): `typecheck`, `lint` e `test` (8/8) verdes;
+    `next build` compila as 3 rotas novas. API/worker/shared **intocados**.
 
 - **2026-07-02 — S6 (Portal de disponibilidade)** · PR #9
   - **Resolvedor puro `resolveAvailability`** (`apps/api/src/escala/resolve-availability.ts`):
