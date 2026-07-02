@@ -188,7 +188,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S1 | ✅ | #2 | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
 | M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b (#4)). |
 | M1b | ✅ | #4 | 2026-07-02 | Drift R6 reconciliado só no `schema.prisma` (sem migração, sem `ALTER` em Intenções): `@default([])` em 4 arrays + `@default(dbgenerated("gen_random_uuid()"))` em `notices.id`. `migrate dev` → "Already in sync"; deploy zerado limpo; seed idempotente + smoke da Prisma Client OK. |
-| S2 | 📝 | — | — | Doc pronto. Depende de S1. |
+| S2 | ✅ | #6 | 2026-07-02 | `OccurrenceService.materialize(parishId, from, to)` idempotente (upsert por `@@unique([parishId, date, time])`, preserva `isSolemnity`/`title` — D7); endpoints admin `POST materialize` / `GET list` / `PATCH :id`. Regra de missas **replicada** (não importada do worker — D9): exceção vence regular no mesmo horário. Convenção de solenidade: **(a)** — materializa `isSolemnity=false`, elevação manual via PATCH. Sem schema/migração novos. |
 | S3 | 📝 | — | — | Doc pronto. Depende de S1. Admin-only nesta fase (coordenador ativa em S5/S6). |
 | S4 | ⬜ | — | — | — |
 | S5 | ⬜ | — | — | — |
@@ -216,6 +216,43 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-02 — S2 (Materialização de ocorrências)** · PR #6
+  - **`OccurrenceService`** (`apps/api/src/escala/`, módulo `EscalaModule` próprio —
+    bounded context separado, registrado na árvore Nest ao lado de `AdminModule`):
+    - `materialize(parishId, from, to)` → `{ created, updated, total }`. Para cada
+      dia do intervalo monta candidatas a partir dos `MassSchedule` ativos do
+      `weekday` + `MassException` ativas do dia; **merge por horário** com a exceção
+      vencendo o regular no mesmo `(date, time)`. **Upsert idempotente** na chave
+      `@@unique([parishId, date, time])`: cria quando não existe; quando existe
+      atualiza **apenas** a origem (`sourceScheduleId`/`sourceExceptionId`), **nunca**
+      toca `isSolemnity` e só preenche `title` se estiver `null` (D7). Escritas dentro
+      de `$transaction`.
+    - `list(parishId, from, to)` e `update(parishId, id, {isSolemnity?, title?})`
+      (eleva/rebaixa solenidade / ajusta título; ownership por paróquia).
+  - **Endpoints admin** (`JwtAuthGuard` + `RolesGuard` + `@Roles("PARISH_ADMIN")`,
+    `parishId` do token): `POST /admin/escala/occurrences/materialize`,
+    `GET /admin/escala/occurrences?from=&to=`, `PATCH /admin/escala/occurrences/:id`.
+  - **Validação Zod em `packages/shared`:** `materializeRangeSchema` (formato
+    `YYYY-MM-DD`, ordenação `from ≤ to`, teto de **92 dias** → 400) e
+    `updateOccurrenceSchema`. Erros caem no `ZodExceptionFilter` global (400).
+  - **D9 respeitado:** a regra de determinação de missas foi **replicada** no serviço,
+    **sem importar nem tocar** o worker/dispatch das Intenções. `prisma/schema.prisma`,
+    migrações e `seed.ts` **intocados** (o modelo `MassOccurrence` já veio da S1) →
+    **S2 não adiciona migração**, risco de drift zero.
+  - **Convenção de solenidade adotada: (a)** — toda ocorrência materializa com
+    `isSolemnity=false`; elevação é sempre manual via `PATCH`. Opção (b)
+    (flag em `MassException`) fica fora do escopo.
+  - **Verificação:** `pnpm -r typecheck`/`lint`/`test` verdes — **api 37/37** (8 testes
+    novos de `OccurrenceService`: idempotência, preservação de `isSolemnity`/`title`,
+    exceção-vence-regular, ownership 403/404), worker 8/8, web 8/8. Intenções sem
+    regressão (suites do worker de despacho e da API intactas).
+  - **Observação (desvio documentado, não muda decisão travada):** a regra do doc
+    faz *merge por horário* — numa data com exceção, as missas regulares do mesmo dia
+    em **outros** horários **continuam** materializadas (só o slot coincidente é
+    substituído). É mais granular que o worker de despacho, que suprime todos os
+    regulares do dia quando há qualquer exceção. Seguido conforme o doc da S2; sem
+    impacto no caminho das Intenções.
 
 - **2026-07-02 — M1b (Manutenção: drift schema↔migração)** · PR #4
   - **Workstream C (drift, R6):** com todas as 12 migrações aplicadas numa base,

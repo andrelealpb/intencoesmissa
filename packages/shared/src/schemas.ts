@@ -153,6 +153,57 @@ export const noticeSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Escala — Materializacao de ocorrencias (S2)
+// ---------------------------------------------------------------------------
+
+const isoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Data deve estar no formato YYYY-MM-DD");
+
+// Limite de intervalo p/ materializacao (evita materializar o ano inteiro por acidente).
+export const MATERIALIZE_MAX_RANGE_DAYS = 92;
+
+export const materializeRangeSchema = z
+  .object({
+    from: isoDateSchema,
+    to: isoDateSchema,
+  })
+  .superRefine((val, ctx) => {
+    const from = new Date(val.from + "T00:00:00Z");
+    const to = new Date(val.to + "T00:00:00Z");
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Data invalida" });
+      return;
+    }
+    if (to < from) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "A data final deve ser maior ou igual a inicial",
+      });
+      return;
+    }
+    const days = Math.round((to.getTime() - from.getTime()) / 86_400_000);
+    if (days > MATERIALIZE_MAX_RANGE_DAYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: `Intervalo maximo e de ${MATERIALIZE_MAX_RANGE_DAYS} dias`,
+      });
+    }
+  });
+
+export const updateOccurrenceSchema = z
+  .object({
+    isSolemnity: z.boolean().optional(),
+    title: z.string().nullish(),
+  })
+  .refine(
+    (d) => d.isSolemnity !== undefined || d.title !== undefined,
+    "Informe isSolemnity e/ou title",
+  );
+
+// ---------------------------------------------------------------------------
 // Inferred types (useful for forms / API handlers)
 // ---------------------------------------------------------------------------
 
@@ -165,3 +216,5 @@ export type MassExceptionInput = z.infer<typeof massExceptionSchema>;
 export type EmolumentInput = z.infer<typeof emolumentSchema>;
 export type ParishProfileInput = z.infer<typeof parishProfileSchema>;
 export type NoticeInput = z.infer<typeof noticeSchema>;
+export type MaterializeRangeInput = z.infer<typeof materializeRangeSchema>;
+export type UpdateOccurrenceInput = z.infer<typeof updateOccurrenceSchema>;
