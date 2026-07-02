@@ -160,7 +160,7 @@ não fazer sem aprovação do Leal.
 | **S2** | Materialização de ocorrências | Gerar `MassOccurrence` p/ um intervalo, idempotente, preservando `isSolemnity`; endpoint p/ elevar solenidade | S1 | Serviço + endpoints admin | `ESCALA_02_materializacao_ocorrencias.md` |
 | **S3** | Cadastro (backend) | CRUD Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement + autorização dupla (admin ∪ coordenador) | S1 | Endpoints `/admin/escala/*` | `ESCALA_03_cadastro_backend.md` |
 | **S4** | Cadastro (frontend admin) | Páginas `/admin/escala/*`: equipes, funções, membros, qualificações, demanda | S3 | UI admin | a escrever |
-| **S5** | Auth de membro | `MemberAuthToken`, geração/validação de link mágico + OTP (WhatsApp/e-mail), JWT de membro, guard de membro | S1 (Member de S3) | Fluxo de login sem senha | a escrever |
+| **S5** | Auth de membro | `MemberAuthToken`, geração/validação de link mágico + OTP (WhatsApp/e-mail), JWT de membro, guard de membro | S1 (Member de S3) | Fluxo de login sem senha | `ESCALA_05_auth_membro.md` |
 | **S6** | Portal de disponibilidade | Membro loga por link, vê ocorrências do mês, marca disponibilidade; pré-preenchimento por `MemberAvailabilityRule` | S2, S5 | Portal do membro | a escrever |
 | **S7** | Motor de sugestão + montagem (backend) | Resolver staffing por ocorrência; gerar rascunho justo (guloso) respeitando qualificação/disponibilidade/teto/priority; endpoints rascunho/override/publish; visibilidade cruzada | S2, S3, S6 | Algoritmo + endpoints de escala | a escrever |
 | **S8** | UI de montagem (frontend coordenador) | Grade do mês, "sugerir distribuição", override manual, ver conflitos, publicar | S7 | UI do coordenador | a escrever |
@@ -191,7 +191,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S2 | ✅ | #6 | 2026-07-02 | `OccurrenceService.materialize(parishId, from, to)` idempotente (upsert por `@@unique([parishId, date, time])`, preserva `isSolemnity`/`title` — D7); endpoints admin `POST materialize` / `GET list` / `PATCH :id`. Regra de missas **replicada** (não importada do worker — D9): exceção vence regular no mesmo horário. Convenção de solenidade: **(a)** — materializa `isSolemnity=false`, elevação manual via PATCH. Sem schema/migração novos. |
 | S3 | ✅ | #7 | 2026-07-02 | Cadastro backend admin-only sob `/admin/escala/*`: CRUD de Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement no módulo existente `apps/api/src/escala` (`CadastroController`/`CadastroService`, convive com o `EscalaController` de S2). `parishId` sempre do JWT; ownership por paróquia (404 não vaza); P2002→409; qualificação valida função da equipe (400); soft-delete p/ entidades com histórico de assignment. Schemas Zod em `packages/shared` (`staffingRequirementSchema` = discriminated union por escopo). `EscalaAccessService` com gancho de coordenador `TODO(S5)`. Função pura `resolveStaffing` + testes dos 5 escopos e desempate por função (D6). Sem schema/migração novos (reusa tabelas da S1). |
 | S4 | ⬜ | — | — | — |
-| S5 | ⬜ | — | — | — |
+| S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
 | S6 | ⬜ | — | — | — |
 | S7 | ⬜ | — | — | — |
 | S8 | ⬜ | — | — | — |
@@ -216,6 +216,55 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-02 — S5 (Auth de membro)** · PR #8
+  - **Segundo realm de autenticação** (D1), 100% aditivo, em Postgres puro (D10),
+    no novo pacote `apps/api/src/escala/auth/`. Admin/Intenções intactos: o
+    `JwtAuthGuard`/`JwtStrategy`/`RolesGuard` do admin **não foram tocados**.
+  - **Fluxo sem senha** (`MemberAuthController`, público, escopado por `parishSlug`):
+    - `POST /escala/auth/request` — **sempre 200 genérico** (anti-enumeração); só
+      entrega de fato se a paróquia existe e o `Member` está ativo.
+    - `POST /escala/auth/verify` — OTP → `{ token }` (JWT de membro) ou **401 genérico**.
+    - `GET /escala/auth/magic?token=…` — link mágico → `{ token }` ou 401 genérico.
+  - **Tokens** (`MemberAuthTokenService`, sobre `MemberAuthToken`): OTP de 6 dígitos
+    (TTL `OTP_TTL_MIN`, default 10); link mágico de 32 bytes base64url (TTL
+    `MAGIC_LINK_TTL_MIN`, default 20). Só `sha256(raw)` em repouso; uso único;
+    novo request **invalida** os anteriores não usados do mesmo `(memberId, type)`;
+    comparação de OTP em **tempo constante**; **teto de 5 tentativas** por token
+    (invalida ao estourar). Coluna aditiva **`attempts`** (migração 13
+    `add_member_auth_token_attempts` — só `ADD COLUMN` na tabela da Escala, sem
+    `ALTER`/`DROP` em Intenções).
+  - **Entrega** (`MemberAuthDeliveryService`, degradação graciosa): OTP→WhatsApp
+    (Z-API por paróquia); sem Z-API **e** com e-mail → cai para link mágico por
+    e-mail (Brevo, método novo `EmailService.sendMemberAuthLink`). Nunca vaza no
+    response. (R1 permanece **só** de S9 — aqui é transacional, volume baixo.)
+  - **Realm isolado:** `MemberJwtStrategy`/`MemberJwtGuard` (`member-jwt`) com
+    `MEMBER_JWT_SECRET` **separado** do admin (guardrail: recusa boot se igual ao
+    `JWT_SECRET`); claims `sub`/`parishId`/`realm:'member'` (+ `coordinatorTeamIds`
+    só p/ UI). `JwtModule` local scopeado ao secret de membro. O guard **recarrega
+    o Member** e nega `isActive=false` (revogação imediata).
+  - **`EscalaAuthGuard` composto** (admin **ou** membro) normaliza `req.actor`
+    (`{ kind, userId?/memberId?, parishId }`).
+  - **Autorização de coordenador ativada (D2) — `TODO(S5)` fechado:**
+    `EscalaAccessService` agora lê **do banco** a cada request
+    (`TeamMembership.isCoordinator && isActive`). `assertCanManageParish` = só
+    admin; `assertCanManageTeam` = admin **ou** coordenador **daquela** equipe
+    (403 em equipe alheia). Revogar `isCoordinator` tira o acesso **na hora**.
+  - **Endpoints da S3 refatorados** para a matriz: `CadastroController` passa de
+    admin-only para `EscalaAuthGuard`; operações de **nível paróquia** (Team,
+    Member) seguem admin-only via `assertCanManageParish`; operações de **equipe**
+    (functions/memberships/qualificações/staffing) aceitam o coordenador. Nomear
+    coordenador (`isCoordinator`) permanece **admin-only** mesmo em vínculo da
+    própria equipe.
+  - **Env novas** (`.env.example`): `MEMBER_JWT_SECRET`, `MEMBER_JWT_TTL` (30d),
+    `OTP_TTL_MIN` (10), `MAGIC_LINK_TTL_MIN` (20), `MEMBER_PORTAL_URL`.
+  - **Testes:** unit de token (geração/validação, uso único, invalidação, teto de
+    tentativas, tempo constante), do ramo de coordenador (banco → acesso) e do
+    isolamento de realm (rejeição de payload sem `realm`, revogação por
+    `isActive`, isolamento criptográfico). Suíte da API: **86 testes verdes**;
+    lint/typecheck/test do workspace **verdes**; schema válido.
+  - **Fora de escopo (respeitado):** nenhuma UI de membro (S6); worker/dispatch
+    das Intenções intocados (D9).
 
 - **2026-07-02 — S3 (Cadastro backend)** · PR #7
   - **`CadastroController` + `CadastroService`** adicionados ao módulo existente

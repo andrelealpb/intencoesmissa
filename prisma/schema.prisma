@@ -577,6 +577,7 @@ model MemberAuthToken {
   tokenHash String              @map("token_hash")
   expiresAt DateTime            @map("expires_at")
   usedAt    DateTime?           @map("used_at")
+  attempts  Int                 @default(0) // tentativas de verificação (teto do OTP — S5)
   createdAt DateTime            @default(now()) @map("created_at")
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)

@@ -321,6 +321,29 @@ export const staffingRequirementCreateSchema = z.intersection(
   z.object({ functionId: uuidSchema }),
 );
 
+// ── Auth de membro (S5) — link mágico / OTP ─────────────
+
+// Canal de entrega opcional. Ausente ⇒ o backend escolhe pelo que o membro tem
+// (telefone → OTP/WhatsApp; senão e-mail → link mágico).
+export const memberAuthChannelSchema = z.enum(["whatsapp", "email"]);
+
+// identifier = telefone OU e-mail. Aceita entrada livre (o backend normaliza e
+// resolve o Member); validação estrita não cabe aqui (anti-enumeração).
+export const memberAuthRequestSchema = z.object({
+  parishSlug: z.string().min(1, "parishSlug e obrigatorio"),
+  identifier: z.string().trim().min(1, "Informe telefone ou e-mail"),
+  channel: memberAuthChannelSchema.optional(),
+});
+
+export const memberAuthVerifySchema = z.object({
+  parishSlug: z.string().min(1, "parishSlug e obrigatorio"),
+  identifier: z.string().trim().min(1, "Informe telefone ou e-mail"),
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "Codigo deve ter 6 digitos"),
+});
+
 // ---------------------------------------------------------------------------
 // Inferred types (useful for forms / API handlers)
 // ---------------------------------------------------------------------------
@@ -351,3 +374,8 @@ export type StaffingRequirementInput = z.infer<typeof staffingRequirementSchema>
 export type StaffingRequirementCreateInput = z.infer<
   typeof staffingRequirementCreateSchema
 >;
+
+// Escala — Auth de membro (S5)
+export type MemberAuthChannel = z.infer<typeof memberAuthChannelSchema>;
+export type MemberAuthRequestInput = z.infer<typeof memberAuthRequestSchema>;
+export type MemberAuthVerifyInput = z.infer<typeof memberAuthVerifySchema>;
