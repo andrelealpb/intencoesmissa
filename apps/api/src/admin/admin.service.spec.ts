@@ -4,6 +4,7 @@ import { AdminService } from "./admin.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "./storage.service";
 import { EmailService } from "./email.service";
+import { WhatsappService } from "./whatsapp.service";
 
 const mockPrisma = {
   parish: { findUnique: jest.fn(), update: jest.fn() },
@@ -27,6 +28,12 @@ const mockEmail = {
   sendDispatchEmail: jest.fn(),
 };
 
+const mockWhatsapp = {
+  sendDocument: jest.fn().mockResolvedValue(undefined),
+  getStatus: jest.fn().mockResolvedValue({ connected: false }),
+  listGroups: jest.fn().mockResolvedValue([]),
+};
+
 describe("AdminService", () => {
   let service: AdminService;
 
@@ -37,6 +44,7 @@ describe("AdminService", () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: StorageService, useValue: mockStorage },
         { provide: EmailService, useValue: mockEmail },
+        { provide: WhatsappService, useValue: mockWhatsapp },
       ],
     }).compile();
 
