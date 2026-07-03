@@ -42,6 +42,10 @@ describe("DispatchService", () => {
           id: "p1",
           parishName: "Test",
           settings: { dispatchTime: "99:99" }, // Will never match current time
+          // A query real inclui massExceptions/massSchedules; sem eles o codigo
+          // (dispatch.service.ts:47,50) estoura ao ler `.length`/`.filter`.
+          massExceptions: [],
+          massSchedules: [],
         },
       ]);
 

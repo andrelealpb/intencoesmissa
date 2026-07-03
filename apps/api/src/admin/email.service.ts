@@ -79,6 +79,52 @@ export class EmailService {
     }
   }
 
+  /**
+   * Envia o link mágico de acesso do membro (Escala / S5). E-mail transacional
+   * simples, sem anexo. Lança em falha — o chamador (delivery da Escala) trata
+   * a degradação graciosa.
+   */
+  async sendMemberAuthLink(
+    to: string,
+    parishName: string,
+    url: string,
+  ): Promise<void> {
+    if (!this.apiKey) {
+      this.logger.warn(`E-mail desabilitado, ignorando link de acesso para: ${to}`);
+      return;
+    }
+
+    const body = {
+      sender: { name: this.fromName, email: this.fromEmail },
+      to: [{ email: to }],
+      subject: `Seu acesso a escala — ${parishName}`,
+      textContent: `Acesse sua escala em: ${url}\n\nEste link e de uso unico e expira em breve. Se voce nao solicitou, ignore este e-mail.`,
+      htmlContent: `
+        <p>Ol&aacute;,</p>
+        <p>Para acessar sua escala de servi&ccedil;o em <strong>${parishName}</strong>, clique no link abaixo:</p>
+        <p><a href="${url}">Entrar na escala</a></p>
+        <p>Este link &eacute; de <strong>uso &uacute;nico</strong> e expira em breve. Se voc&ecirc; n&atilde;o solicitou, ignore este e-mail.</p>
+      `,
+    };
+
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        "api-key": this.apiKey,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Brevo API ${response.status}: ${errorText}`);
+    }
+
+    this.logger.log(`Link de acesso (escala) enviado para ${to}`);
+  }
+
   async sendPastorSummary(
     to: string,
     subject: string,

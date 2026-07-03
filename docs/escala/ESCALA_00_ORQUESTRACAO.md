@@ -158,9 +158,9 @@ não fazer sem aprovação do Leal.
 |----|------|----------|---------|-----------|-----|
 | **S1** | Fundação de dados | Mesclar schema Escala, back-relations, migração 12, seed de equipes/funções padrão | — | Migração + Prisma Client | `ESCALA_01_fundacao_dados.md` |
 | **S2** | Materialização de ocorrências | Gerar `MassOccurrence` p/ um intervalo, idempotente, preservando `isSolemnity`; endpoint p/ elevar solenidade | S1 | Serviço + endpoints admin | `ESCALA_02_materializacao_ocorrencias.md` |
-| **S3** | Cadastro (backend) | CRUD Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement + autorização dupla (admin ∪ coordenador) | S1 | Endpoints `/admin/escala/*` | a escrever |
+| **S3** | Cadastro (backend) | CRUD Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement + autorização dupla (admin ∪ coordenador) | S1 | Endpoints `/admin/escala/*` | `ESCALA_03_cadastro_backend.md` |
 | **S4** | Cadastro (frontend admin) | Páginas `/admin/escala/*`: equipes, funções, membros, qualificações, demanda | S3 | UI admin | a escrever |
-| **S5** | Auth de membro | `MemberAuthToken`, geração/validação de link mágico + OTP (WhatsApp/e-mail), JWT de membro, guard de membro | S1 (Member de S3) | Fluxo de login sem senha | a escrever |
+| **S5** | Auth de membro | `MemberAuthToken`, geração/validação de link mágico + OTP (WhatsApp/e-mail), JWT de membro, guard de membro | S1 (Member de S3) | Fluxo de login sem senha | `ESCALA_05_auth_membro.md` |
 | **S6** | Portal de disponibilidade | Membro loga por link, vê ocorrências do mês, marca disponibilidade; pré-preenchimento por `MemberAvailabilityRule` | S2, S5 | Portal do membro | a escrever |
 | **S7** | Motor de sugestão + montagem (backend) | Resolver staffing por ocorrência; gerar rascunho justo (guloso) respeitando qualificação/disponibilidade/teto/priority; endpoints rascunho/override/publish; visibilidade cruzada | S2, S3, S6 | Algoritmo + endpoints de escala | a escrever |
 | **S8** | UI de montagem (frontend coordenador) | Grade do mês, "sugerir distribuição", override manual, ver conflitos, publicar | S7 | UI do coordenador | a escrever |
@@ -186,11 +186,13 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | ID | Status | PR | Data | Notas |
 |----|--------|----|----|-------|
 | S1 | ✅ | #2 | 2026-07-01 | Migração 12 `add_escala_module` (11 modelos, 5 enums, back-relations Parish/MassSchedule/MassException); enums espelhados em `packages/shared`; seed 6 equipes / 15 funções (idempotente, verificado 2x). Purely additive — sem `ALTER`/`DROP` em tabelas de Intenções. |
-| S2 | 📝 | — | — | Doc pronto. Depende de S1. |
-| S3 | 📝 | — | — | Doc pronto. Depende de S1. Admin-only nesta fase (coordenador ativa em S5/S6). |
-| S4 | ⬜ | — | — | — |
-| S5 | ⬜ | — | — | — |
-| S6 | ⬜ | — | — | — |
+| M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b (#4)). |
+| M1b | ✅ | #4 | 2026-07-02 | Drift R6 reconciliado só no `schema.prisma` (sem migração, sem `ALTER` em Intenções): `@default([])` em 4 arrays + `@default(dbgenerated("gen_random_uuid()"))` em `notices.id`. `migrate dev` → "Already in sync"; deploy zerado limpo; seed idempotente + smoke da Prisma Client OK. |
+| S2 | ✅ | #6 | 2026-07-02 | `OccurrenceService.materialize(parishId, from, to)` idempotente (upsert por `@@unique([parishId, date, time])`, preserva `isSolemnity`/`title` — D7); endpoints admin `POST materialize` / `GET list` / `PATCH :id`. Regra de missas **replicada** (não importada do worker — D9): exceção vence regular no mesmo horário. Convenção de solenidade: **(a)** — materializa `isSolemnity=false`, elevação manual via PATCH. Sem schema/migração novos. |
+| S3 | ✅ | #7 | 2026-07-02 | Cadastro backend admin-only sob `/admin/escala/*`: CRUD de Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement no módulo existente `apps/api/src/escala` (`CadastroController`/`CadastroService`, convive com o `EscalaController` de S2). `parishId` sempre do JWT; ownership por paróquia (404 não vaza); P2002→409; qualificação valida função da equipe (400); soft-delete p/ entidades com histórico de assignment. Schemas Zod em `packages/shared` (`staffingRequirementSchema` = discriminated union por escopo). `EscalaAccessService` com gancho de coordenador `TODO(S5)`. Função pura `resolveStaffing` + testes dos 5 escopos e desempate por função (D6). Sem schema/migração novos (reusa tabelas da S1). |
+| S4 | ✅ | #10 | 2026-07-02 | Frontend admin do cadastro sob `/admin/escala/*` (Next.js App Router, espelhando o design do painel existente — `useSession` + `apiAuthFetch`, sem UI nova). Páginas: **Equipes** (lista/CRUD + botão opcional **Abrir mês** → materialização da S2), **detalhe da equipe** com abas Funções / Vínculos / Demanda, e **Membros** (nível paróquia, busca + paginação). Vínculos expõem `isCoordinator`, teto por equipe e `priority`; qualificações via replace-set das funções da equipe. Demanda: o alvo acompanha o escopo (WEEKDAY→dia, SCHEDULE→horário, OCCASION→exceção; DEFAULT/SOLEMNITY→nenhum) e combinação inválida fica **não submetível**. Warning de duplicata de telefone (201) exibido sem bloquear. `parishId` nunca no request (vem do JWT). Sem backend novo, sem UI de coordenador (S8). Web verde: typecheck/lint/test + `next build` das 3 rotas. |
+| S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
+| S6 | ✅ | #9 | 2026-07-02 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. |
 | S7 | ⬜ | — | — | — |
 | S8 | ⬜ | — | — | — |
 | S9 | ⬜ | — | — | — |
@@ -214,6 +216,271 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-02 — S4 (Cadastro — Frontend admin)** · PR #10
+  - Páginas de administração do módulo Escala sob `/admin/escala/*` no
+    `apps/web` (Next.js App Router), consumindo os endpoints da S3. **Espelham
+    o design do painel admin existente** (mesmo idioma de `masses`/`emoluments`:
+    client component + `useSession` + `apiAuthFetch`, tabelas/cartões Tailwind,
+    formulário-em-cima/lista-embaixo) — nenhuma UI nova inventada.
+  - **`/admin/escala/equipes`** — lista/CRUD de equipes (nome, categoria,
+    descrição, ativa), com contadores de funções/membros e link para o detalhe.
+    Inclui o botão opcional **“Abrir mês”**, que chama a materialização da S2
+    (`POST /admin/escala/occurrences/materialize`) e exibe o resumo
+    `criadas/atualizadas/total`.
+  - **`/admin/escala/equipes/[teamId]`** — detalhe da equipe em três abas:
+    **Funções** (CRUD, `sortOrder`), **Vínculos** (`TeamMembership` com
+    `isCoordinator`, teto/mês — D8 — e `priority` — D5 — mais editor inline de
+    **qualificações** em *replace-set* das funções da equipe) e **Demanda**
+    (`StaffingRequirement`).
+  - **Demanda — alvo acompanha o escopo** (espelha o padrão do `Emolument`):
+    `WEEKDAY→dia da semana`, `SCHEDULE→horário` (lista de `MassSchedule`),
+    `OCCASION→exceção` (lista de `MassException`); `DEFAULT`/`SOLEMNITY` sem
+    alvo. Troca de escopo zera o alvo anterior e **combinação inválida deixa o
+    botão de salvar desabilitado** (não submetível) — além da validação Zod do
+    backend.
+  - **`/admin/escala/membros`** — cadastro de membros no nível paróquia com
+    busca (`?q=`), filtro de ativos e paginação. O **aviso de possível
+    duplicata de telefone** (resposta 201 com `warning`) é exibido **sem
+    bloquear** o cadastro.
+  - `parishId` **nunca** vai no request (derivado do JWT no backend). **Sem
+    backend novo**, **sem UI de coordenador** (é S8) e sem tocar Intenções.
+    Navegação: seção “Escala” adicionada à sidebar do admin.
+  - Verificação (apps/web): `typecheck`, `lint` e `test` (8/8) verdes;
+    `next build` compila as 3 rotas novas. API/worker/shared **intocados**.
+
+- **2026-07-02 — S6 (Portal de disponibilidade)** · PR #9
+  - **Resolvedor puro `resolveAvailability`** (`apps/api/src/escala/resolve-availability.ts`):
+    precedência `explicit > rule > default`, devolvendo também a `source`
+    (`explicit`/`rule`/`default`). Regra de horário específico vence a de dia
+    inteiro (`time=null`); `default` = "não informou" (opt-in U1/U2); status
+    binário na UI (U4 — `MAYBE` no enum resolve como `UNAVAILABLE` efetivo).
+    Unit-testado nas 3 origens + casamento de regra (hora específica e dia
+    inteiro) + precedência entre elas.
+  - **Refino consciente do schema (U3):** a regra recorrente **não** materializa
+    entries. `AvailabilityEntry` guarda **só desvios** (o membro marca um slot
+    sem regra ou desmarca um que a regra deixava disponível); a disponibilidade
+    efetiva é calculada pelo resolvedor sob demanda. Elimina o bug de "mudei a
+    regra e as entries antigas ficaram velhas". A S7 reusa o mesmo resolvedor.
+  - **Endpoints do realm de membro** (`MemberPortalController`, sob
+    `MemberJwtGuard`, escopo `req.member`): `GET /escala/me` (perfil),
+    `GET /escala/me/occurrences?month=YYYY-MM` (ocorrências + disponibilidade
+    efetiva; mês não materializado → lista vazia), `PUT /escala/me/availability`
+    (`AVAILABLE`/`UNAVAILABLE`/`CLEAR`; `CLEAR` apaga o entry e volta a valer a
+    regra), `GET`/`PUT /escala/me/rules` (replace-set). `memberId`/`parishId`
+    **sempre do JWT**, nunca do path/body; ocorrência de outra paróquia → 404
+    (isolamento testado). Rate limit nas escritas (`ThrottlerGuard`).
+  - **Frontend `/p/{slug}/escala/*`** (mobile-first, sessão de membro em cookie
+    próprio, separada do NextAuth do admin): `entrar` (login OTP em dois passos
+    + callback do link mágico via `GET /escala/auth/magic`, com erros
+    **genéricos** — anti-enumeração da S5 preservada); visão do mês com toggle
+    binário Disponível/Indisponível e **autosave por toggle** (indicador
+    "Salvo"), selo de solenidade, seletor de mês, estado vazio amigável; editor
+    de regra recorrente (replace-set) que ao salvar re-preenche o mês.
+  - **Zod em `packages/shared`:** `monthSchema`, `memberAvailabilityUpsertSchema`,
+    `memberAvailabilityRuleSchema`/`memberAvailabilityRulesSchema` (replace-set
+    sem duplicatas, espelhando o `@@unique([memberId, weekday, time])`).
+  - **Sem schema/migração novos** (reusa `AvailabilityEntry`/`MemberAvailabilityRule`
+    da S1). Intenções sem regressão; `lint`/`typecheck`/`test` verdes
+    (104 testes na API), `web build` OK, `prisma validate` OK.
+  - Fora de escopo (não implementado, por design): tela de coordenador,
+    visualização de escala/atribuições, edição de `priority` pelo membro.
+
+- **2026-07-02 — S5 (Auth de membro)** · PR #8
+  - **Segundo realm de autenticação** (D1), 100% aditivo, em Postgres puro (D10),
+    no novo pacote `apps/api/src/escala/auth/`. Admin/Intenções intactos: o
+    `JwtAuthGuard`/`JwtStrategy`/`RolesGuard` do admin **não foram tocados**.
+  - **Fluxo sem senha** (`MemberAuthController`, público, escopado por `parishSlug`):
+    - `POST /escala/auth/request` — **sempre 200 genérico** (anti-enumeração); só
+      entrega de fato se a paróquia existe e o `Member` está ativo.
+    - `POST /escala/auth/verify` — OTP → `{ token }` (JWT de membro) ou **401 genérico**.
+    - `GET /escala/auth/magic?token=…` — link mágico → `{ token }` ou 401 genérico.
+  - **Tokens** (`MemberAuthTokenService`, sobre `MemberAuthToken`): OTP de 6 dígitos
+    (TTL `OTP_TTL_MIN`, default 10); link mágico de 32 bytes base64url (TTL
+    `MAGIC_LINK_TTL_MIN`, default 20). Só `sha256(raw)` em repouso; uso único;
+    novo request **invalida** os anteriores não usados do mesmo `(memberId, type)`;
+    comparação de OTP em **tempo constante**; **teto de 5 tentativas** por token
+    (invalida ao estourar). Coluna aditiva **`attempts`** (migração 13
+    `add_member_auth_token_attempts` — só `ADD COLUMN` na tabela da Escala, sem
+    `ALTER`/`DROP` em Intenções).
+  - **Entrega** (`MemberAuthDeliveryService`, degradação graciosa): OTP→WhatsApp
+    (Z-API por paróquia); sem Z-API **e** com e-mail → cai para link mágico por
+    e-mail (Brevo, método novo `EmailService.sendMemberAuthLink`). Nunca vaza no
+    response. (R1 permanece **só** de S9 — aqui é transacional, volume baixo.)
+  - **Realm isolado:** `MemberJwtStrategy`/`MemberJwtGuard` (`member-jwt`) com
+    `MEMBER_JWT_SECRET` **separado** do admin (guardrail: recusa boot se igual ao
+    `JWT_SECRET`); claims `sub`/`parishId`/`realm:'member'` (+ `coordinatorTeamIds`
+    só p/ UI). `JwtModule` local scopeado ao secret de membro. O guard **recarrega
+    o Member** e nega `isActive=false` (revogação imediata).
+  - **`EscalaAuthGuard` composto** (admin **ou** membro) normaliza `req.actor`
+    (`{ kind, userId?/memberId?, parishId }`).
+  - **Autorização de coordenador ativada (D2) — `TODO(S5)` fechado:**
+    `EscalaAccessService` agora lê **do banco** a cada request
+    (`TeamMembership.isCoordinator && isActive`). `assertCanManageParish` = só
+    admin; `assertCanManageTeam` = admin **ou** coordenador **daquela** equipe
+    (403 em equipe alheia). Revogar `isCoordinator` tira o acesso **na hora**.
+  - **Endpoints da S3 refatorados** para a matriz: `CadastroController` passa de
+    admin-only para `EscalaAuthGuard`; operações de **nível paróquia** (Team,
+    Member) seguem admin-only via `assertCanManageParish`; operações de **equipe**
+    (functions/memberships/qualificações/staffing) aceitam o coordenador. Nomear
+    coordenador (`isCoordinator`) permanece **admin-only** mesmo em vínculo da
+    própria equipe.
+  - **Env novas** (`.env.example`): `MEMBER_JWT_SECRET`, `MEMBER_JWT_TTL` (30d),
+    `OTP_TTL_MIN` (10), `MAGIC_LINK_TTL_MIN` (20), `MEMBER_PORTAL_URL`.
+  - **Testes:** unit de token (geração/validação, uso único, invalidação, teto de
+    tentativas, tempo constante), do ramo de coordenador (banco → acesso) e do
+    isolamento de realm (rejeição de payload sem `realm`, revogação por
+    `isActive`, isolamento criptográfico). Suíte da API: **86 testes verdes**;
+    lint/typecheck/test do workspace **verdes**; schema válido.
+  - **Fora de escopo (respeitado):** nenhuma UI de membro (S6); worker/dispatch
+    das Intenções intocados (D9).
+
+- **2026-07-02 — S3 (Cadastro backend)** · PR #7
+  - **`CadastroController` + `CadastroService`** adicionados ao módulo existente
+    `apps/api/src/escala/` (`EscalaModule` de S2), sob o prefixo `/admin/escala`
+    e convivendo com o `EscalaController` (ocorrências) em sub-rotas distintas.
+    Todos os endpoints `JwtAuthGuard` + `RolesGuard` + `@Roles("PARISH_ADMIN")`.
+  - **CRUD das 6 entidades:** `Team`, `TeamFunction`, `Member`, `TeamMembership`,
+    `MembershipFunction` (qualificações, replace-set) e `StaffingRequirement`.
+    - `parishId` **sempre do JWT**, nunca do body (regra transversal 1).
+    - **Ownership por paróquia** em todo `:id`; recurso de outra paróquia → 404
+      (não vaza existência). A checagem de equipe mora em `assertCanManageTeam`.
+    - **Unicidade → 409 amigável** (P2002 traduzido): `Team(parishId,name)`,
+      `TeamFunction(teamId,name)`, `TeamMembership(teamId,memberId)`.
+    - **Qualificações:** `PUT memberships/:id/functions` substitui o conjunto
+      inteiro em `$transaction`, validando que **cada** função pertence à equipe
+      do membership (senão 400).
+    - **Soft-delete** para entidades com histórico de `Assignment`: `Member`
+      sempre; `Team`/`TeamFunction`/`TeamMembership` quando referenciadas
+      (hard-delete só quando não há referência); `StaffingRequirement` hard sempre.
+    - `POST members` não bloqueia telefone duplicado — devolve o membro com
+      `warning` de possível duplicata.
+  - **Schemas Zod em `packages/shared`:** `teamSchema`, `teamFunctionSchema`,
+    `memberSchema` (reusa `fullNameSchema`/`phoneSchema`; `birthDate ≤ hoje`),
+    `teamMembershipSchema`, `membershipFunctionsSchema` e
+    `staffingRequirementSchema` — **discriminated union por `scope`** que rejeita
+    campos de alvo incompatíveis (ex.: `weekday` em `DEFAULT` → 400). Alvos
+    `massScheduleId`/`massExceptionId` validados como pertencentes à paróquia.
+  - **`EscalaAccessService` (a costura — D2):** `assertCanManageParish` e
+    `assertCanManageTeam`. Só `User PARISH_ADMIN` autoriza hoje; o ramo do
+    coordenador (`Member` com `TeamMembership.isCoordinator`) está marcado como
+    `TODO(S5)` — interface pronta, sem implementar o realm de membro (é S5).
+  - **Função pura `resolveStaffing`** (`apps/api/src/escala/resolve-staffing.ts`),
+    sem I/O: dado o descritor da ocorrência + regras, resolve a demanda por
+    função pela prioridade `OCCASION > SOLEMNITY > SCHEDULE > WEEKDAY > DEFAULT`
+    (D6), **independente por função**. Consumida por S7/S8.
+  - **Sem schema/migração novos** — reusa as tabelas da S1 (aditivo puro; zero
+    risco de drift, nada tocado nas Intenções — D9).
+  - **Verificação:** `pnpm -r typecheck`/`lint`/`test` verdes — **api 64/64**
+    (26 testes novos: `resolveStaffing` nos 5 escopos + desempate por função;
+    `CadastroService` para ownership/404, P2002→409, qualificação fora da equipe→400,
+    soft vs hard delete, aviso de duplicata, alvo de staffing de outra paróquia→400),
+    worker 8/8, web 8/8. Intenções sem regressão.
+  - **Desvio documentado (não muda decisão travada):** o cadastro entrou no
+    `EscalaModule` já criado pela S2 (`apps/api/src/escala/`), não num módulo
+    `admin/escala` novo — o doc da S3 sugeria `apps/api/src/admin/escala/`, mas o
+    bounded context já existia da S2. `POST members` mantém o 201 padrão do Nest
+    (o doc menciona 200) e sinaliza a duplicata via `warning` no corpo.
+
+- **2026-07-02 — S2 (Materialização de ocorrências)** · PR #6
+  - **`OccurrenceService`** (`apps/api/src/escala/`, módulo `EscalaModule` próprio —
+    bounded context separado, registrado na árvore Nest ao lado de `AdminModule`):
+    - `materialize(parishId, from, to)` → `{ created, updated, total }`. Para cada
+      dia do intervalo monta candidatas a partir dos `MassSchedule` ativos do
+      `weekday` + `MassException` ativas do dia; **merge por horário** com a exceção
+      vencendo o regular no mesmo `(date, time)`. **Upsert idempotente** na chave
+      `@@unique([parishId, date, time])`: cria quando não existe; quando existe
+      atualiza **apenas** a origem (`sourceScheduleId`/`sourceExceptionId`), **nunca**
+      toca `isSolemnity` e só preenche `title` se estiver `null` (D7). Escritas dentro
+      de `$transaction`.
+    - `list(parishId, from, to)` e `update(parishId, id, {isSolemnity?, title?})`
+      (eleva/rebaixa solenidade / ajusta título; ownership por paróquia).
+  - **Endpoints admin** (`JwtAuthGuard` + `RolesGuard` + `@Roles("PARISH_ADMIN")`,
+    `parishId` do token): `POST /admin/escala/occurrences/materialize`,
+    `GET /admin/escala/occurrences?from=&to=`, `PATCH /admin/escala/occurrences/:id`.
+  - **Validação Zod em `packages/shared`:** `materializeRangeSchema` (formato
+    `YYYY-MM-DD`, ordenação `from ≤ to`, teto de **92 dias** → 400) e
+    `updateOccurrenceSchema`. Erros caem no `ZodExceptionFilter` global (400).
+  - **D9 respeitado:** a regra de determinação de missas foi **replicada** no serviço,
+    **sem importar nem tocar** o worker/dispatch das Intenções. `prisma/schema.prisma`,
+    migrações e `seed.ts` **intocados** (o modelo `MassOccurrence` já veio da S1) →
+    **S2 não adiciona migração**, risco de drift zero.
+  - **Convenção de solenidade adotada: (a)** — toda ocorrência materializa com
+    `isSolemnity=false`; elevação é sempre manual via `PATCH`. Opção (b)
+    (flag em `MassException`) fica fora do escopo.
+  - **Verificação:** `pnpm -r typecheck`/`lint`/`test` verdes — **api 37/37** (8 testes
+    novos de `OccurrenceService`: idempotência, preservação de `isSolemnity`/`title`,
+    exceção-vence-regular, ownership 403/404), worker 8/8, web 8/8. Intenções sem
+    regressão (suites do worker de despacho e da API intactas).
+  - **Observação (desvio documentado, não muda decisão travada):** a regra do doc
+    faz *merge por horário* — numa data com exceção, as missas regulares do mesmo dia
+    em **outros** horários **continuam** materializadas (só o slot coincidente é
+    substituído). É mais granular que o worker de despacho, que suprime todos os
+    regulares do dia quando há qualquer exceção. Seguido conforme o doc da S2; sem
+    impacto no caminho das Intenções.
+
+- **2026-07-02 — M1b (Manutenção: drift schema↔migração)** · PR #4
+  - **Workstream C (drift, R6):** com todas as 12 migrações aplicadas numa base,
+    `prisma migrate dev --create-only` propunha `DROP DEFAULT` em 5 colunas de
+    **tabelas de Intenções** — o drift que a S1 tirou da migração dela mas que
+    seguia no repo. Diagnóstico coluna a coluna (defaults reais conferidos no
+    `information_schema`):
+    - `parishes.dispatch_phones` (`'{}'::text[]`), `parishes.dispatch_groups`,
+      `dispatch_batches.sent_to_phones`, `notices.mass_times` (`ARRAY[]::text[]`):
+      default de banco **útil e vivo** (Prisma omite o campo em create parcial →
+      banco preenche `[]`). Decisão: **declarar `@default([])` no schema** para
+      casar schema↔banco. Zero mudança no banco.
+    - `notices.id` (`gen_random_uuid()`): default de banco **redundante** (só o
+      `notices` o tinha; os demais `id` geram uuid client-side via `@default(uuid())`).
+      Decisão: **`@default(dbgenerated("gen_random_uuid()"))`** — declara o default
+      existente no schema em vez de dropá-lo, mantendo o viés de **não `ALTER`ar
+      tabela de Intenções**. Banco intocado.
+    - `parishes.dispatch_emails` e `dispatch_batches.sent_to_emails` **não** têm
+      default no banco e **não** driftam — deixados como estão (adicionar
+      `@default([])` neles criaria drift novo).
+  - **Resultado:** reconciliação **100% no `schema.prisma`, sem nenhuma migração
+    nova e sem um único `ALTER`** em tabela de Intenções. `prisma migrate dev`
+    passou a reportar **"Already in sync, no schema change or pending migration
+    was found."**; `migrate deploy` em base zerada aplica as 12 migrações limpo.
+  - **Intenções sem regressão:** `seed.ts` roda limpo e idempotente (2×: 6 equipes
+    / 15 funções / 14 tipos estáveis); smoke pela Prisma Client — `Notice.create`
+    sem `id` → banco gera uuid válido; `massTimes`/`dispatchPhones`/`dispatchGroups`
+    default `[]`. Caminho de despacho não tocado (D9).
+  - Orquestrador: **R6 resolvido**; Status `M1b ✅`; este Changelog.
+
+- **2026-07-02 — M1a (Manutenção: CI + base verde)** · PR #3
+  - **Workstream A (CI, R5):** `.github/workflows/ci.yml` — removido o filtro de
+    `branches` do gatilho `pull_request` (CI passa a rodar em PR para **qualquer**
+    base, inclusive branches `claude/**`; nunca mais fica OFF em silêncio). `on.push`
+    mantido restrito a `main`/`develop`. Adicionado o step **Build shared package**
+    (`pnpm build:shared`) antes de lint/typecheck/test: `@missas/shared` expõe
+    `main`/`types` a partir de `dist/` e a API importa dele — sem o build, o
+    typecheck/test da API falhava por não resolver o módulo (lacuna de CI encontrada
+    além das 4 falhas catalogadas). Criada a branch `develop` como base do PR.
+  - **Workstream B (base verde, R7):** quatro falhas pré-existentes + extras
+    reveladas ao rodar o CI de verdade. Fixes mínimos, nenhuma regra silenciada:
+    - **B1** — `apps/web` sem `@types/jest`: adicionado `@types/jest` aos devDeps
+      do web (sem `types` explícito no tsconfig → auto-incluído). `phone-input.spec.ts` OK.
+    - **B2** — mock do worker sem `massExceptions`: `dispatch.service.spec.ts` não
+      fornecia `massExceptions`/`massSchedules`; a query real (`dispatch.service.ts:29-33`)
+      **sempre** os inclui, então é lacuna de **mock**, não do código. Adicionados
+      `massExceptions: []` e `massSchedules: []` ao fixture.
+    - **B3** — ESLint do `shared` (e do `worker`): ambos sem `.eslintrc`, então
+      `eslint src/` não achava config e falhava. Criados `.eslintrc.cjs` (extends
+      `@missas/eslint-config`, como a API; resolve via `shamefully-hoist`). Também
+      na API: removido `parserOptions.project` — a config não habilita regra
+      type-aware, e o typed-linting só causava erro de parse nos `*.spec.ts`
+      (excluídos do tsconfig). Specs seguem lintados sintaticamente.
+    - **B4** — `admin.service.spec` da API: **investigado — não é bug de produto.**
+      `AdminService` passou a depender de `WhatsappService` (usado no despacho por
+      Z-API) e está corretamente provido/exportado em `admin.module.ts`; o spec é que
+      estava desatualizado (sem o mock). Adicionado `mockWhatsapp` aos providers.
+  - **Verificação:** `lint`, `typecheck`, `test` verdes em todos os apps (web 8/8,
+    worker 8/8, api 29/29). Intenções sem regressão (testes do worker de despacho e
+    da API verdes). **Não** tocou `prisma/schema.prisma` nem migrações (drift R6 fica
+    para PR-M1b (#4)).
+  - Nota de ambiente: engines do Prisma baixadas manualmente por bloqueio de rede
+    do sandbox (não afeta o CI, que tem internet direta).
 
 - **2026-07-01 — S1 (Fundação de dados)** · PR #2
   - Mesclado o modelo Escala em `prisma/schema.prisma`: 11 modelos
@@ -252,3 +519,6 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 | R2 | **Teto global por pessoa** (soma das equipes). Não modelado (D8). | Adicionar *soft cap* no `Member` só se aparecer sobrecarga real. |
 | R3 | **Regime B** (rascunhos sobrepostos, `unique` só no publicado via índice parcial). | Só se o atrito entre coordenadores em rascunho incomodar. |
 | R4 | **Convergência do calendário.** No futuro, o worker das Intenções poderia ler de `MassOccurrence`. | Opcional, fora do MVP. Não fazer sem aprovação. |
+| R5 | **CI desligado.** O gatilho `pull_request` filtrava por base `main`; PRs empilhados fora de `main`/`develop` (e branches `claude/*`) nunca disparavam o CI. | ✅ **Resolvido em PR-M1a (#3)** — filtro de `branches` removido do `pull_request`; CI roda em toda PR. |
+| R6 | **Drift schema↔migração.** Prisma quer embutir `DROP DEFAULT` em `parishes`/`notices`/`dispatch_batches` (tabelas de Intenções). | ✅ **Resolvido em PR-M1b (#4).** Reconciliado 100% no `schema.prisma`, **sem migração e sem `ALTER`** em tabela de Intenções: `@default([])` nas 4 colunas de array com default no banco (`parishes.dispatch_phones`/`dispatch_groups`, `dispatch_batches.sent_to_phones`, `notices.mass_times`) e `@default(dbgenerated("gen_random_uuid()"))` em `notices.id` (default de banco redundante). `migrate dev` → "Already in sync"; `deploy` em base zerada limpo; banco intocado. |
+| R7 | **Base não-verde.** Falhas pré-existentes de lint/typecheck/test (e lacuna de build do `shared` no CI) impediam o "sem regressão" automatizado. | ✅ **Resolvido em PR-M1a (#3)** — B1–B4 + build do `shared` + configs de ESLint; lint/typecheck/test verdes em todos os apps. |

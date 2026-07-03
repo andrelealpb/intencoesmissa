@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main, develop]
+  # Sem filtro de `branches` no pull_request: o CI roda em PR para QUALQUER
+  # base (inclusive branches `claude/**`), para nunca mais ficar OFF em silencio.
   pull_request:
-    branches: [main]
 
 jobs:
   ci:
@@ -48,6 +49,11 @@ jobs:
 
       - name: Generate Prisma client
         run: pnpm db:generate
+
+      # @missas/shared expoe `main`/`types` a partir de dist/; api (typecheck e
+      # test) importa dele. Precisa estar compilado antes de lint/typecheck/test.
+      - name: Build shared package
+        run: pnpm build:shared
 
       - name: Lint
         run: pnpm lint

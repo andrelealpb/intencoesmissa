@@ -54,8 +54,8 @@ model Parish {
   addressJson     Json?    @map("address_json") @db.JsonB
   phonesJson      Json?    @map("phones_json") @db.JsonB
   dispatchEmails  String[] @map("dispatch_emails")
-  dispatchPhones  String[] @map("dispatch_phones")
-  dispatchGroups  String[] @map("dispatch_groups")
+  dispatchPhones  String[] @default([]) @map("dispatch_phones")
+  dispatchGroups  String[] @default([]) @map("dispatch_groups")
   dispatchRecipients Json? @map("dispatch_recipients") @db.JsonB
   logoUrl         String?  @map("logo_url")
   logoStorageKey  String?  @map("logo_storage_key")
@@ -251,7 +251,7 @@ model DispatchBatch {
   pdfStorageKey  String         @map("pdf_storage_key")
   pdfUrl         String?        @map("pdf_url")
   sentToEmails   String[]       @map("sent_to_emails")
-  sentToPhones   String[]       @map("sent_to_phones")
+  sentToPhones   String[]       @default([]) @map("sent_to_phones")
   sentAt         DateTime       @map("sent_at")
   status         DispatchStatus
   errorMessage   String?        @map("error_message")
@@ -265,11 +265,11 @@ model DispatchBatch {
 // ─── Notices (Avisos) ────────────────────────────────
 
 model Notice {
-  id          String    @id @default(uuid()) @db.Uuid
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   parishId    String    @map("parish_id") @db.Uuid
   subject     String
   description String
-  massTimes   String[]  @map("mass_times")  // ["08:00","19:00"] — empty = all masses
+  massTimes   String[]  @default([]) @map("mass_times")  // ["08:00","19:00"] — empty = all masses
   startDate   DateTime? @map("start_date") @db.Date
   endDate     DateTime? @map("end_date") @db.Date
   isActive    Boolean   @default(true) @map("is_active")
@@ -577,6 +577,7 @@ model MemberAuthToken {
   tokenHash String              @map("token_hash")
   expiresAt DateTime            @map("expires_at")
   usedAt    DateTime?           @map("used_at")
+  attempts  Int                 @default(0) // tentativas de verificação (teto do OTP — S5)
   createdAt DateTime            @default(now()) @map("created_at")
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
