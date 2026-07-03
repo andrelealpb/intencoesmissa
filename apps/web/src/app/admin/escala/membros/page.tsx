@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { apiAuthFetch } from '@/lib/api';
+import { PhoneInput, formatPhone, unformatPhone } from '@/components/phone-input';
 import type { Member } from '@/lib/escala';
 
 interface MemberForm {
@@ -56,7 +57,8 @@ export default function EscalaMembersPage() {
 
   const buildPayload = () => ({
     fullName: form.fullName.trim(),
-    phone: form.phone.trim(),
+    // form.phone guarda só os dígitos; o phoneSchema (S3) exige (XX) XXXXX-XXXX.
+    phone: formatPhone(form.phone),
     email: form.email.trim() || undefined,
     birthDate: form.birthDate || undefined,
   });
@@ -69,8 +71,8 @@ export default function EscalaMembersPage() {
       setError('Informe o nome completo (nome e sobrenome).');
       return;
     }
-    if (form.phone.trim().length < 8) {
-      setError('Informe um telefone válido.');
+    if (unformatPhone(form.phone).length < 10) {
+      setError('Informe um telefone válido com DDD.');
       return;
     }
     try {
@@ -99,7 +101,8 @@ export default function EscalaMembersPage() {
     setEditingId(m.id);
     setForm({
       fullName: m.fullName,
-      phone: m.phone,
+      // O banco guarda formatado; o estado do form trabalha só com dígitos.
+      phone: unformatPhone(m.phone ?? ''),
       email: m.email ?? '',
       birthDate: m.birthDate ? m.birthDate.slice(0, 10) : '',
       isActive: m.isActive,
@@ -153,13 +156,11 @@ export default function EscalaMembersPage() {
               placeholder="Nome e sobrenome"
             />
           </div>
-          <div>
+          <div className="w-44">
             <label className="block text-xs text-gray-500 mb-1">Telefone</label>
-            <input
-              className="border rounded px-3 py-2 text-sm"
+            <PhoneInput
               value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              placeholder="(00) 00000-0000"
+              onChange={(v) => setForm({ ...form, phone: v })}
             />
           </div>
           <div>
