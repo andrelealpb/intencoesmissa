@@ -9,6 +9,7 @@ import { Prisma } from "@prisma/client";
 import { MinistryCategory } from "@missas/shared";
 import { CadastroService } from "./cadastro.service";
 import { EscalaAccessService, type AdminActor } from "./escala-access.service";
+import { EscalaNotifyService } from "./escala-notify.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 const mockPrisma = {
@@ -62,9 +63,16 @@ const mockPrisma = {
   assignment: { count: jest.fn() },
   massSchedule: { findUnique: jest.fn() },
   massException: { findUnique: jest.fn() },
+  parish: { findUnique: jest.fn() },
   $transaction: jest.fn((ops: unknown[]) =>
     Promise.all(ops as Promise<unknown>[]),
   ),
+};
+
+const mockNotify = {
+  sendTeamInvite: jest.fn(),
+  sendGroupConvocation: jest.fn(),
+  zapiReady: jest.fn(),
 };
 
 const ADMIN: AdminActor = {
@@ -89,6 +97,7 @@ describe("CadastroService", () => {
       providers: [
         CadastroService,
         EscalaAccessService,
+        { provide: EscalaNotifyService, useValue: mockNotify },
         { provide: PrismaService, useValue: mockPrisma },
       ],
     }).compile();
@@ -155,6 +164,70 @@ describe("CadastroService", () => {
       await expect(
         service.createMembership(ADMIN, "t1", { memberId: "m1" }),
       ).rejects.toThrow(ConflictException);
+      // Falhou antes de criar → nenhum convite disparado.
+      expect(mockNotify.sendTeamInvite).not.toHaveBeenCalled();
+    });
+
+    it("dispara o convite 1x por padrao (sendInvite ausente = true)", async () => {
+      mockPrisma.team.findUnique.mockResolvedValue({
+        parishId: "p1",
+        name: "Coroinhas",
+      });
+      mockPrisma.member.findUnique.mockResolvedValue({
+        id: "m1",
+        parishId: "p1",
+        phone: "(11) 90000-0000",
+      });
+      mockPrisma.parish.findUnique.mockResolvedValue({ id: "p1", slug: "par" });
+      mockPrisma.teamMembership.create.mockResolvedValue({ id: "ms1" });
+
+      const result = await service.createMembership(ADMIN, "t1", {
+        memberId: "m1",
+      });
+
+      expect(result).toEqual({ id: "ms1" });
+      expect(mockNotify.sendTeamInvite).toHaveBeenCalledTimes(1);
+    });
+
+    it("nao dispara convite quando sendInvite=false", async () => {
+      mockPrisma.team.findUnique.mockResolvedValue({
+        parishId: "p1",
+        name: "Coroinhas",
+      });
+      mockPrisma.member.findUnique.mockResolvedValue({
+        id: "m1",
+        parishId: "p1",
+        phone: "(11) 90000-0000",
+      });
+      mockPrisma.teamMembership.create.mockResolvedValue({ id: "ms1" });
+
+      await service.createMembership(ADMIN, "t1", {
+        memberId: "m1",
+        sendInvite: false,
+      });
+
+      expect(mockNotify.sendTeamInvite).not.toHaveBeenCalled();
+    });
+
+    it("falha ao carregar dados do convite nao quebra o cadastro", async () => {
+      mockPrisma.team.findUnique.mockResolvedValue({
+        parishId: "p1",
+        name: "Coroinhas",
+      });
+      mockPrisma.member.findUnique.mockResolvedValue({
+        id: "m1",
+        parishId: "p1",
+        phone: "(11) 90000-0000",
+      });
+      mockPrisma.teamMembership.create.mockResolvedValue({ id: "ms1" });
+      // A leitura da paróquia (dentro do disparo do convite) explode.
+      mockPrisma.parish.findUnique.mockRejectedValue(new Error("db down"));
+
+      // Cadastro conclui mesmo assim (degradação graciosa).
+      const result = await service.createMembership(ADMIN, "t1", {
+        memberId: "m1",
+      });
+      expect(result).toEqual({ id: "ms1" });
     });
   });
 

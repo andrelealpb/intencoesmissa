@@ -221,6 +221,8 @@ export const teamSchema = z.object({
   name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
   category: z.nativeEnum(MinistryCategory),
   description: z.string().nullish(),
+  // Grupo de WhatsApp da equipe (Z-API) — destino da convocação (S6.5). Opcional.
+  whatsappGroupId: z.string().trim().max(120).nullish(),
 });
 
 export const teamUpdateSchema = teamSchema.extend({
@@ -267,6 +269,9 @@ export const teamMembershipSchema = z.object({
   isCoordinator: z.boolean().optional(),
   maxAssignmentsPerMonth: z.number().int().min(1, "Teto deve ser >= 1").nullish(),
   priority: z.number().int().min(0, "Prioridade deve ser >= 0").optional(),
+  // Convite individual por WhatsApp ao vincular (S6.5 — C3). Ausente ⇒ default
+  // `true` no serviço. Degradação graciosa: falha de envio não quebra o cadastro.
+  sendInvite: z.boolean().optional(),
 });
 
 export const teamMembershipUpdateSchema = z.object({
@@ -357,6 +362,19 @@ export const monthSchema = z
     return month >= 1 && month <= 12;
   }, "Mes invalido");
 
+// ── Convocação de disponibilidade (S6.5) ────────────────
+// Dispara 1 mensagem por grupo de equipe na abertura do mês. `teamIds` = equipes
+// alvo (coordenador só a própria; admin escolhe). `deadline` = prazo opcional
+// exibido no texto ("informe até ...").
+export const convocationSchema = z.object({
+  month: monthSchema,
+  teamIds: z
+    .array(uuidSchema)
+    .min(1, "Selecione ao menos uma equipe")
+    .max(100, "Numero de equipes excede o limite"),
+  deadline: z.string().trim().max(60).optional(),
+});
+
 // Horário "HH:mm" (00:00..23:59). Reusado por regra recorrente.
 const timeOfDaySchema = z
   .string()
@@ -444,3 +462,6 @@ export type MemberAvailabilityRuleInput = z.infer<
 export type MemberAvailabilityRulesInput = z.infer<
   typeof memberAvailabilityRulesSchema
 >;
+
+// Escala — Convites e Convocação (S6.5)
+export type ConvocationInput = z.infer<typeof convocationSchema>;
