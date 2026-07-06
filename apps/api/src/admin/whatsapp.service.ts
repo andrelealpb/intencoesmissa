@@ -137,29 +137,47 @@ export class WhatsappService {
 
   /**
    * List all WhatsApp groups for the connected instance.
+   *
+   * O endpoint `/groups` da Z-API **exige** os parâmetros `page` e `pageSize`;
+   * sem eles a API responde 200 com lista **vazia**. Paginamos até esgotar
+   * (página com menos itens que o tamanho encerra), com um teto de segurança.
    */
   async listGroups(
     instanceId: string,
     token: string,
     clientToken?: string | null,
   ): Promise<Array<{ id: string; name: string }>> {
-    const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/groups`;
+    const pageSize = 100;
+    const maxPages = 20; // teto de segurança (até 2000 grupos)
+    const groups: Array<{ id: string; name: string }> = [];
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: this.getHeaders(clientToken),
-    });
+    for (let page = 1; page <= maxPages; page++) {
+      const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/groups?page=${page}&pageSize=${pageSize}`;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Z-API ${response.status}: ${errorText}`);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this.getHeaders(clientToken),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Z-API ${response.status}: ${errorText}`);
+      }
+
+      const data = (await response.json()) as Array<Record<string, any>>;
+      if (!Array.isArray(data) || data.length === 0) break;
+
+      for (const g of data) {
+        groups.push({
+          id: g.phone || g.id || g.groupId,
+          name: g.name || g.subject || g.phone || "Sem nome",
+        });
+      }
+
+      if (data.length < pageSize) break; // última página
     }
 
-    const data = (await response.json()) as Array<Record<string, any>>;
-    return data.map((g) => ({
-      id: g.phone || g.id || g.groupId,
-      name: g.name || g.subject || g.phone || 'Sem nome',
-    }));
+    return groups;
   }
 
   /**
