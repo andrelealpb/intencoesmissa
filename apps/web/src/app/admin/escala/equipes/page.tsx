@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { apiAuthFetch } from '@/lib/api';
 import { categoryLabels, type Team, type ConvocationSummary } from '@/lib/escala';
+import { WhatsappGroupPicker } from '@/components/whatsapp-group-picker';
 
 interface TeamForm {
   name: string;
@@ -342,15 +343,6 @@ export default function EscalaTeamsPage() {
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
           </div>
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs text-gray-500 mb-1">Grupo de WhatsApp (opcional)</label>
-            <input
-              className="border rounded px-3 py-2 text-sm w-full"
-              value={form.whatsappGroupId}
-              onChange={(e) => setForm({ ...form, whatsappGroupId: e.target.value })}
-              placeholder="ID do grupo na Z-API"
-            />
-          </div>
           <button
             onClick={handleSave}
             className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700"
@@ -366,10 +358,20 @@ export default function EscalaTeamsPage() {
             </button>
           )}
         </div>
-        <p className="text-xs text-gray-400 mt-2">
-          O ID do grupo de WhatsApp é usado na convocação de disponibilidade. Obtenha-o na tela de
-          configuração da Z-API (lista de grupos da instância conectada).
-        </p>
+
+        {/* Grupo de WhatsApp da equipe — destino da convocação (S6.5) */}
+        <div className="mt-4 max-w-xl">
+          <label className="block text-xs text-gray-500 mb-1">Grupo de WhatsApp (opcional)</label>
+          <WhatsappGroupPicker
+            value={form.whatsappGroupId}
+            onChange={(id) => setForm({ ...form, whatsappGroupId: id })}
+            token={token}
+          />
+          <p className="text-xs text-gray-400 mt-2">
+            Usado na convocação de disponibilidade. Busque os grupos da instância Z-API conectada da
+            paróquia e selecione o desta equipe — ou informe o ID manualmente.
+          </p>
+        </div>
       </div>
 
       {/* Lista de equipes */}
