@@ -35,6 +35,7 @@ export function WhatsappGroupPicker({
   const [searched, setSearched] = useState(false);
   const [manual, setManual] = useState('');
   const [error, setError] = useState('');
+  const [filter, setFilter] = useState('');
 
   const fetchGroups = async () => {
     const token = session?.accessToken as string | undefined;
@@ -50,6 +51,7 @@ export function WhatsappGroupPicker({
         | null;
       // Defensivo: garante um array mesmo se o backend devolver algo inesperado.
       setAvailable(Array.isArray(groups) ? groups : []);
+      setFilter('');
       setSearched(true);
     } catch (err) {
       setAvailable([]);
@@ -65,6 +67,15 @@ export function WhatsappGroupPicker({
   };
 
   const selectedName = available.find((g) => g.id === value)?.name;
+
+  const normalizedFilter = filter.trim().toLowerCase();
+  const filtered = normalizedFilter
+    ? available.filter(
+        (g) =>
+          g.name.toLowerCase().includes(normalizedFilter) ||
+          g.id.toLowerCase().includes(normalizedFilter),
+      )
+    : available;
 
   return (
     <div className="space-y-2">
@@ -101,30 +112,49 @@ export function WhatsappGroupPicker({
         </div>
       )}
 
-      {searched && !error && (
-        <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
-          {available.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-gray-500">
-              Nenhum grupo encontrado na instância conectada. Confira a conexão do
-              WhatsApp em Paróquia ou informe o ID manualmente abaixo.
-            </p>
-          ) : (
-            available.map((g) => (
-              <button
-                key={g.id}
-                type="button"
-                onClick={() => onChange(g.id)}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between gap-2 ${
-                  g.id === value ? 'bg-green-50' : ''
-                }`}
-              >
-                <span className="flex-1">{g.name}</span>
-                <span className="text-xs text-gray-400 shrink-0">
-                  {g.id === value ? 'Selecionado' : 'Selecionar'}
-                </span>
-              </button>
-            ))
-          )}
+      {searched && !error && available.length === 0 && (
+        <div className="border rounded-md p-3 text-sm text-gray-500">
+          Nenhum grupo encontrado na instância conectada. Confira a conexão do
+          WhatsApp em Paróquia ou informe o ID manualmente abaixo.
+        </div>
+      )}
+
+      {searched && !error && available.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              className="flex-1 border rounded-md px-3 py-2 text-sm"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Filtrar grupos por nome ou ID..."
+            />
+            <span className="text-xs text-gray-400 shrink-0">
+              {filtered.length}/{available.length}
+            </span>
+          </div>
+          <div className="border rounded-md divide-y max-h-64 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-gray-500">
+                Nenhum grupo corresponde a “{filter.trim()}”.
+              </p>
+            ) : (
+              filtered.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => onChange(g.id)}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between gap-2 ${
+                    g.id === value ? 'bg-green-50' : ''
+                  }`}
+                >
+                  <span className="flex-1 truncate">{g.name}</span>
+                  <span className="text-xs text-gray-400 shrink-0">
+                    {g.id === value ? 'Selecionado' : 'Selecionar'}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
         </div>
       )}
 
