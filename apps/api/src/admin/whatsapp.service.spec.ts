@@ -48,16 +48,16 @@ describe("WhatsappService.listGroups", () => {
 
   it("une /groups e /chats, deduplicando por id (nome do /groups vence)", async () => {
     fetchMock
-      .mockReturnValueOnce(
-        okJson([{ phone: "A-group", name: "Nome Amigavel A" }]),
-      ) // /groups
+      .mockReturnValueOnce(okJson([{ phone: "A-group", name: "Nome Amigavel A" }])) // /groups p1
+      .mockReturnValueOnce(okJson([])) // /groups p2 -> fim
       .mockReturnValueOnce(
         okJson([
           { phone: "A-group", name: "A-group", isGroup: true }, // duplicado (nome pior)
           { phone: "B-group", name: "Grupo B", isGroup: true }, // grupo novo (só em /chats)
           { phone: "5511", name: "Contato", isGroup: false }, // não-grupo → ignorado
         ]),
-      ); // /chats
+      ) // /chats p1
+      .mockReturnValueOnce(okJson([])); // /chats p2 -> fim
 
     const groups = await service.listGroups("inst", "tok");
 
@@ -66,7 +66,7 @@ describe("WhatsappService.listGroups", () => {
       { id: "B-group", name: "Grupo B" },
     ]);
     expect(fetchMock.mock.calls[0][0]).toContain("/groups?");
-    expect(fetchMock.mock.calls[1][0]).toContain("/chats?");
+    expect(fetchMock.mock.calls[2][0]).toContain("/chats?");
   });
 
   it("mapeia phone→id e name; usa fallbacks quando faltam", async () => {
@@ -88,36 +88,81 @@ describe("WhatsappService.listGroups", () => {
     expect(groups[1]).toEqual({ id: "222-group", name: "Sem nome" });
   });
 
-  it("pagina /groups ate esgotar (pagina cheia -> proxima)", async () => {
-    const fullPage = Array.from({ length: 100 }, (_, i) => ({
-      phone: `g${i}-group`,
-      name: `Grupo ${i}`,
-    }));
+  it("pagina ate vir vazio — NAO para numa pagina parcial (pageSize capado)", async () => {
+    const page = (prefix: string, n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        phone: `${prefix}${i}-group`,
+        name: `Grupo ${prefix}${i}`,
+      }));
     fetchMock
-      .mockReturnValueOnce(okJson(fullPage)) // /groups page 1 (cheia)
-      .mockReturnValueOnce(okJson([{ phone: "last-group", name: "Ultimo" }])) // /groups page 2 (parcial)
+      .mockReturnValueOnce(okJson(page("a", 50))) // /groups p1: parcial (50<100) mas NAO deve parar
+      .mockReturnValueOnce(okJson(page("b", 30))) // /groups p2: mais grupos
+      .mockReturnValueOnce(okJson([])) // /groups p3: vazio -> fim
       .mockReturnValueOnce(okJson([])); // /chats
 
     const groups = await service.listGroups("inst", "tok");
 
-    expect(groups).toHaveLength(101);
+    // Se parasse na 1a pagina parcial, traria só 50. Robustez => 80.
+    expect(groups).toHaveLength(80);
     expect(fetchMock.mock.calls[1][0]).toContain("page=2");
-    expect(fetchMock.mock.calls[2][0]).toContain("/chats?");
+    expect(fetchMock.mock.calls[2][0]).toContain("page=3");
+  });
+
+  it("para quando a Z-API ignora a paginacao (so itens repetidos)", async () => {
+    const same = [
+      { phone: "A-group", name: "A" },
+      { phone: "B-group", name: "B" },
+    ];
+    fetchMock
+      .mockReturnValueOnce(okJson(same)) // /groups p1
+      .mockReturnValueOnce(okJson(same)) // /groups p2: mesmos ids -> para
+      .mockReturnValueOnce(okJson([])); // /chats
+
+    const groups = await service.listGroups("inst", "tok");
+
+    expect(groups).toEqual([
+      { id: "A-group", name: "A" },
+      { id: "B-group", name: "B" },
+    ]);
+    // 2 chamadas em /groups (p1 e p2 que revelou repeticao) + 1 em /chats.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("/groups vazio -> ainda lista grupos vindos de /chats", async () => {
     fetchMock
-      .mockReturnValueOnce(okJson([])) // /groups
+      .mockReturnValueOnce(okJson([])) // /groups p1 vazio -> fim
       .mockReturnValueOnce(
         okJson([
           { phone: "grp-group", name: "Equipe X", isGroup: true },
           { phone: "5511999", name: "Contato", isGroup: false },
         ]),
-      ); // /chats
+      ) // /chats p1
+      .mockReturnValueOnce(okJson([])); // /chats p2 -> fim
 
     const groups = await service.listGroups("inst", "tok");
 
     expect(groups).toEqual([{ id: "grp-group", name: "Equipe X" }]);
+  });
+
+  it("enriquece o nome via group-metadata quando o grupo vem sem nome amigavel", async () => {
+    fetchMock
+      .mockReturnValueOnce(okJson([])) // /groups p1 vazio
+      .mockReturnValueOnce(
+        okJson([{ phone: "120363-group", name: "120363-group", isGroup: true }]),
+      ) // /chats p1: name == id (sem nome amigável)
+      .mockReturnValueOnce(okJson([])) // /chats p2 -> fim
+      .mockReturnValueOnce(okJson({ subject: "Liturgia Missa das 11h" })); // group-metadata
+
+    const groups = await service.listGroups("inst", "tok");
+
+    expect(groups).toEqual([
+      { id: "120363-group", name: "Liturgia Missa das 11h" },
+    ]);
+    const metaCall = fetchMock.mock.calls.find((c) =>
+      String(c[0]).includes("group-metadata"),
+    );
+    expect(metaCall).toBeTruthy();
+    expect(String(metaCall?.[0])).toContain("120363-group");
   });
 
   it("aceita resposta embrulhada ({ groups: [...] })", async () => {
@@ -139,8 +184,9 @@ describe("WhatsappService.listGroups", () => {
 
   it("erro no /chats nao derruba a busca (usa so /groups)", async () => {
     fetchMock
-      .mockReturnValueOnce(okJson([{ phone: "A-group", name: "A" }])) // /groups ok
-      .mockReturnValueOnce(notOk(500)); // /chats falha
+      .mockReturnValueOnce(okJson([{ phone: "A-group", name: "A" }])) // /groups p1
+      .mockReturnValueOnce(okJson([])) // /groups p2 -> fim
+      .mockReturnValueOnce(notOk(500)); // /chats falha -> best-effort
 
     const groups = await service.listGroups("inst", "tok");
     expect(groups).toEqual([{ id: "A-group", name: "A" }]);

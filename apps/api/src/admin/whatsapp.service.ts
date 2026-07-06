@@ -180,13 +180,36 @@ export class WhatsappService {
       const opt = this.toGroupOption(g);
       if (opt.id && !byId.has(opt.id)) byId.set(opt.id, opt);
     }
-    for (const c of fromChats) {
-      const isGroup =
-        c.isGroup === true || String(c.phone ?? "").includes("-group");
-      if (!isGroup) continue;
+    const chatGroups = fromChats.filter(
+      (c) => c.isGroup === true || String(c.phone ?? "").includes("-group"),
+    );
+    for (const c of chatGroups) {
       const opt = this.toGroupOption(c);
       if (opt.id && !byId.has(opt.id)) byId.set(opt.id, opt);
     }
+
+    // O nome é o que identifica o grupo. Alguns vêm sem nome amigável (ex.: do
+    // /chats, onde o `name` do grupo costuma ser o próprio id). Busca o `subject`
+    // real via group-metadata — em paralelo, best-effort e com teto de latência.
+    const semNome = [...byId.values()].filter((g) => this.nomeEhId(g));
+    const MAX_ENRICH = 30;
+    await Promise.all(
+      semNome.slice(0, MAX_ENRICH).map(async (g) => {
+        const subject = await this.fetchGroupSubject(
+          instanceId,
+          token,
+          g.id,
+          clientToken,
+        );
+        if (subject) byId.set(g.id, { id: g.id, name: subject });
+      }),
+    );
+
+    // Diagnóstico (aparece nos logs da API): de onde vieram os grupos.
+    this.logger.log(
+      `listGroups: /groups=${fromGroups.length} /chats(total)=${fromChats.length} ` +
+        `/chats(grupos)=${chatGroups.length} sem-nome=${semNome.length} total=${byId.size}`,
+    );
 
     return [...byId.values()];
   }
@@ -195,6 +218,45 @@ export class WhatsappService {
   private toGroupOption(g: Record<string, any>): { id: string; name: string } {
     const id = g.phone || g.id || g.groupId || "";
     return { id, name: g.name || g.subject || g.phone || "Sem nome" };
+  }
+
+  /** O "nome" é na verdade o id/placeholder (grupo sem nome amigável)? */
+  private nomeEhId(g: { id: string; name: string }): boolean {
+    const n = (g.name ?? "").trim();
+    return (
+      n === "" ||
+      n === "Sem nome" ||
+      n === g.id ||
+      /(-group$|@g\.us$)/.test(n) ||
+      /^\d{10,}$/.test(n)
+    );
+  }
+
+  /**
+   * Busca o nome real (`subject`) de um grupo via group-metadata. Best-effort:
+   * qualquer falha devolve `null` (o chamador mantém o nome que já tinha).
+   */
+  private async fetchGroupSubject(
+    instanceId: string,
+    token: string,
+    groupId: string,
+    clientToken?: string | null,
+  ): Promise<string | null> {
+    try {
+      const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/group-metadata/${encodeURIComponent(
+        groupId,
+      )}`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this.getHeaders(clientToken),
+      });
+      if (!response.ok) return null;
+      const data = (await response.json()) as { subject?: string };
+      const subject = typeof data?.subject === "string" ? data.subject.trim() : "";
+      return subject || null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -209,8 +271,9 @@ export class WhatsappService {
     clientToken?: string | null,
   ): Promise<Array<Record<string, any>>> {
     const pageSize = 100;
-    const maxPages = 20; // teto de segurança (até 2000 itens)
+    const maxPages = 40; // teto de segurança (até 4000 itens)
     const all: Array<Record<string, any>> = [];
+    const seen = new Set<string>();
 
     for (let page = 1; page <= maxPages; page++) {
       const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/${resource}?page=${page}&pageSize=${pageSize}`;
@@ -226,10 +289,21 @@ export class WhatsappService {
       }
 
       const items = this.asArray(await response.json());
-      if (items.length === 0) break;
+      if (items.length === 0) break; // esgotou
 
-      all.push(...items);
-      if (items.length < pageSize) break; // última página
+      // NÃO paramos por `items.length < pageSize`: a Z-API pode limitar o
+      // pageSize server-side (devolve menos do que pedimos), e parar aí cortaria
+      // grupos. Avançamos as páginas até vir vazio OU não haver item novo
+      // (protege contra paginação ignorada, que devolveria sempre a 1ª página).
+      let added = 0;
+      for (const it of items) {
+        const key = String(it.phone ?? it.id ?? it.groupId ?? "");
+        if (key && seen.has(key)) continue;
+        if (key) seen.add(key);
+        all.push(it);
+        added++;
+      }
+      if (added === 0) break;
     }
 
     return all;
