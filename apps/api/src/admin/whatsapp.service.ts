@@ -138,21 +138,59 @@ export class WhatsappService {
   /**
    * List all WhatsApp groups for the connected instance.
    *
-   * O endpoint `/groups` da Z-API **exige** os parâmetros `page` e `pageSize`;
-   * sem eles a API responde 200 com lista **vazia**. Paginamos até esgotar
-   * (página com menos itens que o tamanho encerra), com um teto de segurança.
+   * Robusto a duas armadilhas da Z-API:
+   * 1. Os endpoints de listagem **exigem** `page`/`pageSize`; sem eles a API
+   *    responde 200 com lista **vazia**. Paginamos até esgotar (teto de segurança).
+   * 2. Nem toda conta popula o endpoint dedicado `/groups`; quando ele volta
+   *    vazio, caímos para `/chats` filtrando `isGroup` — o mesmo grupo aparece lá.
+   * Também normaliza a resposta: array direto ou embrulhado (`{groups|chats|...}`).
    */
   async listGroups(
     instanceId: string,
     token: string,
     clientToken?: string | null,
   ): Promise<Array<{ id: string; name: string }>> {
+    // 1. Endpoint dedicado de grupos.
+    const fromGroups = (
+      await this.fetchZapiPaged(instanceId, token, "groups", clientToken)
+    )
+      .map((g) => this.toGroupOption(g))
+      .filter((g) => g.id);
+    if (fromGroups.length > 0) return fromGroups;
+
+    // 2. Fallback: chats filtrando os que são grupo.
+    return (await this.fetchZapiPaged(instanceId, token, "chats", clientToken))
+      .filter(
+        (c) =>
+          c.isGroup === true || String(c.phone ?? "").includes("-group"),
+      )
+      .map((c) => this.toGroupOption(c))
+      .filter((g) => g.id);
+  }
+
+  /** Normaliza um item de grupo/chat da Z-API para `{ id, name }`. */
+  private toGroupOption(g: Record<string, any>): { id: string; name: string } {
+    const id = g.phone || g.id || g.groupId || "";
+    return { id, name: g.name || g.subject || g.phone || "Sem nome" };
+  }
+
+  /**
+   * Busca paginada de um recurso Z-API que devolve lista. Envia `page`/`pageSize`
+   * (obrigatórios) e acumula até uma página vir vazia ou parcial. Aceita resposta
+   * em array direto ou embrulhada em `{ groups | chats | value | data | result }`.
+   */
+  private async fetchZapiPaged(
+    instanceId: string,
+    token: string,
+    resource: "groups" | "chats",
+    clientToken?: string | null,
+  ): Promise<Array<Record<string, any>>> {
     const pageSize = 100;
-    const maxPages = 20; // teto de segurança (até 2000 grupos)
-    const groups: Array<{ id: string; name: string }> = [];
+    const maxPages = 20; // teto de segurança (até 2000 itens)
+    const all: Array<Record<string, any>> = [];
 
     for (let page = 1; page <= maxPages; page++) {
-      const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/groups?page=${page}&pageSize=${pageSize}`;
+      const url = `https://api.z-api.io/instances/${instanceId}/token/${token}/${resource}?page=${page}&pageSize=${pageSize}`;
 
       const response = await fetch(url, {
         method: "GET",
@@ -164,20 +202,26 @@ export class WhatsappService {
         throw new Error(`Z-API ${response.status}: ${errorText}`);
       }
 
-      const data = (await response.json()) as Array<Record<string, any>>;
-      if (!Array.isArray(data) || data.length === 0) break;
+      const items = this.asArray(await response.json());
+      if (items.length === 0) break;
 
-      for (const g of data) {
-        groups.push({
-          id: g.phone || g.id || g.groupId,
-          name: g.name || g.subject || g.phone || "Sem nome",
-        });
-      }
-
-      if (data.length < pageSize) break; // última página
+      all.push(...items);
+      if (items.length < pageSize) break; // última página
     }
 
-    return groups;
+    return all;
+  }
+
+  /** Extrai um array da resposta: array direto ou embrulhado numa chave comum. */
+  private asArray(body: unknown): Array<Record<string, any>> {
+    if (Array.isArray(body)) return body as Array<Record<string, any>>;
+    if (body && typeof body === "object") {
+      for (const key of ["groups", "chats", "value", "data", "result"]) {
+        const nested = (body as Record<string, unknown>)[key];
+        if (Array.isArray(nested)) return nested as Array<Record<string, any>>;
+      }
+    }
+    return [];
   }
 
   /**
