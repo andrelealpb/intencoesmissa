@@ -365,7 +365,6 @@ export default function EscalaTeamsPage() {
           <WhatsappGroupPicker
             value={form.whatsappGroupId}
             onChange={(id) => setForm({ ...form, whatsappGroupId: id })}
-            token={token}
           />
           <p className="text-xs text-gray-400 mt-2">
             Usado na convocação de disponibilidade. Busque os grupos da instância Z-API conectada da
