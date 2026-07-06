@@ -70,11 +70,37 @@ describe("WhatsappService.listGroups", () => {
     expect((fetchMock.mock.calls[1][0] as string)).toContain("page=2");
   });
 
-  it("para na primeira pagina vazia", async () => {
-    fetchMock.mockReturnValueOnce(okJson([]));
+  it("/groups vazio -> cai para /chats filtrando isGroup", async () => {
+    fetchMock
+      .mockReturnValueOnce(okJson([])) // /groups vazio
+      .mockReturnValueOnce(
+        okJson([
+          { phone: "grp-group", name: "Equipe X", isGroup: true },
+          { phone: "5511999", name: "Contato", isGroup: false },
+        ]),
+      ); // /chats
+
+    const groups = await service.listGroups("inst", "tok");
+
+    expect(groups).toEqual([{ id: "grp-group", name: "Equipe X" }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][0]).toContain("/groups?");
+    expect(fetchMock.mock.calls[1][0]).toContain("/chats?");
+  });
+
+  it("aceita resposta embrulhada ({ groups: [...] })", async () => {
+    fetchMock.mockReturnValueOnce(
+      okJson({ groups: [{ phone: "w-group", name: "Embrulhado" }] }),
+    );
+    const groups = await service.listGroups("inst", "tok");
+    expect(groups).toEqual([{ id: "w-group", name: "Embrulhado" }]);
+  });
+
+  it("tudo vazio (/groups e /chats) -> lista vazia", async () => {
+    fetchMock.mockReturnValueOnce(okJson([])).mockReturnValueOnce(okJson([]));
     const groups = await service.listGroups("inst", "tok");
     expect(groups).toEqual([]);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("lanca em resposta nao-ok", async () => {
