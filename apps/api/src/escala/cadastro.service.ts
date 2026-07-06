@@ -21,6 +21,7 @@ import type {
 } from "@missas/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { EscalaAccessService, type AdminActor } from "./escala-access.service";
+import { EscalaNotifyService } from "./escala-notify.service";
 
 interface MemberListQuery {
   q?: string;
@@ -43,6 +44,7 @@ export class CadastroService {
   constructor(
     private prisma: PrismaService,
     private access: EscalaAccessService,
+    private notify: EscalaNotifyService,
   ) {}
 
   // ── Teams ───────────────────────────────────────────────
@@ -67,6 +69,7 @@ export class CadastroService {
           name: data.name,
           category: data.category,
           description: data.description ?? null,
+          whatsappGroupId: this.normalizeGroupId(data.whatsappGroupId),
         },
       });
     } catch (err) {
@@ -96,6 +99,7 @@ export class CadastroService {
           name: data.name,
           category: data.category,
           description: data.description ?? null,
+          whatsappGroupId: this.normalizeGroupId(data.whatsappGroupId),
           ...(data.isActive === undefined ? {} : { isActive: data.isActive }),
         },
       });
@@ -335,8 +339,9 @@ export class CadastroService {
     // O membro precisa existir e pertencer à mesma paróquia.
     await this.ensureMemberOwnership(parishId, data.memberId);
 
+    let membership;
     try {
-      return await this.prisma.teamMembership.create({
+      membership = await this.prisma.teamMembership.create({
         data: {
           parishId,
           teamId,
@@ -351,6 +356,42 @@ export class CadastroService {
         err,
         "Este membro ja esta vinculado a esta equipe",
       );
+    }
+
+    // Convite individual (S6.5 — C1/C3): default ligado. Degradação graciosa —
+    // o envio nunca bloqueia nem falha o cadastro (o convite é acessório).
+    if (data.sendInvite !== false) {
+      await this.sendInvite(parishId, teamId, data.memberId);
+    }
+
+    return membership;
+  }
+
+  /**
+   * Dispara o convite individual por WhatsApp para um vínculo recém-criado.
+   * Carrega paróquia/equipe/membro e delega ao `EscalaNotifyService` (que nunca
+   * lança). Blindado por try/catch extra: nem uma falha de leitura derruba o
+   * cadastro já concluído.
+   */
+  private async sendInvite(
+    parishId: string,
+    teamId: string,
+    memberId: string,
+  ): Promise<void> {
+    try {
+      const [parish, team, member] = await Promise.all([
+        this.prisma.parish.findUnique({ where: { id: parishId } }),
+        this.prisma.team.findUnique({
+          where: { id: teamId },
+          select: { name: true },
+        }),
+        this.prisma.member.findUnique({ where: { id: memberId } }),
+      ]);
+      if (parish && team && member) {
+        await this.notify.sendTeamInvite(parish, member, team.name);
+      }
+    } catch {
+      // Silencioso por design: o cadastro já está persistido.
     }
   }
 
@@ -612,6 +653,13 @@ export class CadastroService {
         throw new BadRequestException("Excecao nao pertence a esta paroquia");
       }
     }
+  }
+
+  /** Normaliza o ID de grupo: string vazia/whitespace → null (sem grupo). */
+  private normalizeGroupId(value?: string | null): string | null {
+    if (value == null) return null;
+    const trimmed = value.trim();
+    return trimmed === "" ? null : trimmed;
   }
 
   private translateUnique(err: unknown, message: string): Error {

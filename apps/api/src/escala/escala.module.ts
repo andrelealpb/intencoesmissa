@@ -7,6 +7,9 @@ import { OccurrenceService } from "./occurrence.service";
 import { CadastroController } from "./cadastro.controller";
 import { CadastroService } from "./cadastro.service";
 import { EscalaAccessService } from "./escala-access.service";
+import { EscalaNotifyService } from "./escala-notify.service";
+import { ConvocationController } from "./convocation.controller";
+import { ConvocationService } from "./convocation.service";
 import { MemberPortalController } from "./member-portal.controller";
 import { AvailabilityService } from "./availability.service";
 import { MemberAuthController } from "./auth/member-auth.controller";
@@ -26,6 +29,9 @@ import { memberAuthConfig } from "./auth/member-auth.config";
  *   `EscalaAccessService` (autorizacao lida do banco).
  * - S6: portal do voluntario (`/escala/me/*` sob `MemberJwtGuard`) —
  *   disponibilidade efetiva via `resolveAvailability`, regras recorrentes.
+ * - S6.5: convite individual no vinculo (`EscalaNotifyService`) + convocacao de
+ *   grupo na abertura do mes (`ConvocationController`/`ConvocationService`),
+ *   reusando a entrega Z-API. Materializacao segue independente do envio.
  *
  * O `JwtModule` local assina/verifica o JWT de MEMBRO com secret proprio,
  * scopeado a este modulo — nunca colide com o `JwtService` do admin (D1).
@@ -43,6 +49,7 @@ import { memberAuthConfig } from "./auth/member-auth.config";
   controllers: [
     EscalaController,
     CadastroController,
+    ConvocationController,
     MemberAuthController,
     MemberPortalController,
   ],
@@ -50,6 +57,8 @@ import { memberAuthConfig } from "./auth/member-auth.config";
     OccurrenceService,
     CadastroService,
     EscalaAccessService,
+    EscalaNotifyService,
+    ConvocationService,
     AvailabilityService,
     MemberAuthService,
     MemberAuthTokenService,

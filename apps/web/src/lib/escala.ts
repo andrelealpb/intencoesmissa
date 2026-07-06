@@ -68,8 +68,26 @@ export interface Team {
   name: string;
   category: string;
   description?: string | null;
+  whatsappGroupId?: string | null;
   isActive: boolean;
   _count?: { memberships: number; functions: number };
+}
+
+// Resumo da convocação de disponibilidade (S6.5).
+export interface ConvocationResult {
+  teamId: string;
+  teamName: string;
+  status: 'sent' | 'skipped' | 'failed';
+  reason?: string;
+}
+
+export interface ConvocationSummary {
+  month: string;
+  monthLabel: string;
+  results: ConvocationResult[];
+  sent: number;
+  skipped: number;
+  failed: number;
 }
 
 export interface TeamFunction {
