@@ -138,11 +138,13 @@ export class WhatsappService {
   /**
    * List all WhatsApp groups for the connected instance.
    *
-   * Robusto a duas armadilhas da Z-API:
+   * Robusto às armadilhas da Z-API:
    * 1. Os endpoints de listagem **exigem** `page`/`pageSize`; sem eles a API
    *    responde 200 com lista **vazia**. Paginamos até esgotar (teto de segurança).
-   * 2. Nem toda conta popula o endpoint dedicado `/groups`; quando ele volta
-   *    vazio, caímos para `/chats` filtrando `isGroup` — o mesmo grupo aparece lá.
+   * 2. O endpoint dedicado `/groups` costuma trazer **só um subconjunto** (os
+   *    grupos "salvos"/recentes). Para listar **todos**, unimos com `/chats`
+   *    filtrando `isGroup` — lá aparecem todos os grupos de que o número participa.
+   * O `/groups` tem prioridade no nome (mais amigável); a união deduplica por id.
    * Também normaliza a resposta: array direto ou embrulhado (`{groups|chats|...}`).
    */
   async listGroups(
@@ -150,22 +152,43 @@ export class WhatsappService {
     token: string,
     clientToken?: string | null,
   ): Promise<Array<{ id: string; name: string }>> {
-    // 1. Endpoint dedicado de grupos.
-    const fromGroups = (
-      await this.fetchZapiPaged(instanceId, token, "groups", clientToken)
-    )
-      .map((g) => this.toGroupOption(g))
-      .filter((g) => g.id);
-    if (fromGroups.length > 0) return fromGroups;
+    // 1. Endpoint dedicado (nomes amigáveis). É o primário — se falhar, propaga.
+    const fromGroups = await this.fetchZapiPaged(
+      instanceId,
+      token,
+      "groups",
+      clientToken,
+    );
 
-    // 2. Fallback: chats filtrando os que são grupo.
-    return (await this.fetchZapiPaged(instanceId, token, "chats", clientToken))
-      .filter(
-        (c) =>
-          c.isGroup === true || String(c.phone ?? "").includes("-group"),
-      )
-      .map((c) => this.toGroupOption(c))
-      .filter((g) => g.id);
+    // 2. Chats como cobertura complementar (best-effort: se o plano/endpoint
+    //    não suportar, seguimos só com /groups em vez de derrubar a busca).
+    let fromChats: Array<Record<string, any>> = [];
+    try {
+      fromChats = await this.fetchZapiPaged(
+        instanceId,
+        token,
+        "chats",
+        clientToken,
+      );
+    } catch {
+      fromChats = [];
+    }
+
+    // União deduplicada por id. `/groups` entra primeiro (nome amigável vence).
+    const byId = new Map<string, { id: string; name: string }>();
+    for (const g of fromGroups) {
+      const opt = this.toGroupOption(g);
+      if (opt.id && !byId.has(opt.id)) byId.set(opt.id, opt);
+    }
+    for (const c of fromChats) {
+      const isGroup =
+        c.isGroup === true || String(c.phone ?? "").includes("-group");
+      if (!isGroup) continue;
+      const opt = this.toGroupOption(c);
+      if (opt.id && !byId.has(opt.id)) byId.set(opt.id, opt);
+    }
+
+    return [...byId.values()];
   }
 
   /** Normaliza um item de grupo/chat da Z-API para `{ id, name }`. */

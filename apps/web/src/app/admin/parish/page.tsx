@@ -46,6 +46,7 @@ export default function ParishPage() {
   const [newGroupId, setNewGroupId] = useState('');
   const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name: string }>>([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
+  const [groupFilter, setGroupFilter] = useState('');
   const [zapiStatus, setZapiStatus] = useState<{ configured: boolean; connected: boolean; phone?: string; error?: string } | null>(null);
   const [zapiChecking, setZapiChecking] = useState(false);
 
@@ -516,26 +517,52 @@ export default function ParishPage() {
                 >
                   {loadingGroups ? 'Buscando grupos...' : 'Buscar Grupos do WhatsApp'}
                 </button>
-                {availableGroups.length > 0 && (
-                  <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
-                    {availableGroups
-                      .filter((g) => !dispatchGroups.includes(g.id))
-                      .map((g) => (
-                        <button
-                          key={g.id}
-                          type="button"
-                          onClick={() => setDispatchGroups([...dispatchGroups, g.id])}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between"
-                        >
-                          <span>{g.name}</span>
-                          <span className="text-xs text-gray-400">Adicionar</span>
-                        </button>
-                      ))}
-                    {availableGroups.filter((g) => !dispatchGroups.includes(g.id)).length === 0 && (
-                      <p className="px-3 py-2 text-sm text-gray-500">Todos os grupos ja foram adicionados.</p>
-                    )}
-                  </div>
-                )}
+                {availableGroups.length > 0 && (() => {
+                  const notAdded = availableGroups.filter((g) => !dispatchGroups.includes(g.id));
+                  const q = groupFilter.trim().toLowerCase();
+                  const shown = q
+                    ? notAdded.filter(
+                        (g) =>
+                          g.name.toLowerCase().includes(q) || g.id.toLowerCase().includes(q),
+                      )
+                    : notAdded;
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="flex-1 border rounded-md px-3 py-2 text-sm"
+                          value={groupFilter}
+                          onChange={(e) => setGroupFilter(e.target.value)}
+                          placeholder="Filtrar grupos por nome ou ID..."
+                        />
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {shown.length}/{notAdded.length}
+                        </span>
+                      </div>
+                      <div className="border rounded-md divide-y max-h-64 overflow-y-auto">
+                        {shown.map((g) => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => setDispatchGroups([...dispatchGroups, g.id])}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between gap-2"
+                          >
+                            <span className="truncate">{g.name}</span>
+                            <span className="text-xs text-gray-400 shrink-0">Adicionar</span>
+                          </button>
+                        ))}
+                        {notAdded.length === 0 && (
+                          <p className="px-3 py-2 text-sm text-gray-500">Todos os grupos ja foram adicionados.</p>
+                        )}
+                        {notAdded.length > 0 && shown.length === 0 && (
+                          <p className="px-3 py-2 text-sm text-gray-500">
+                            Nenhum grupo corresponde a “{groupFilter.trim()}”.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="flex items-center gap-2">
                   <input
                     className="flex-1 border rounded-md px-3 py-2 text-sm"
