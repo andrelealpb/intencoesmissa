@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { apiAuthFetch } from '@/lib/api';
 
 interface Group {
@@ -16,31 +17,48 @@ interface Group {
  * conectada, escopada pela paróquia do JWT (backend intocado). Mantém a entrada
  * manual do ID como fallback, espelhando o comportamento daquela tela.
  *
+ * Lê o token da sessão **no clique** (via `useSession`), como a tela da paróquia
+ * — nunca depende de um prop de token possivelmente vazio no primeiro render.
+ *
  * `value` = ID do grupo gravado (ex.: `120363...-group`) ou string vazia.
  */
 export function WhatsappGroupPicker({
   value,
   onChange,
-  token,
 }: {
   value: string;
   onChange: (id: string) => void;
-  token: string;
 }) {
+  const { data: session } = useSession();
   const [available, setAvailable] = useState<Group[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
   const [manual, setManual] = useState('');
   const [error, setError] = useState('');
 
   const fetchGroups = async () => {
-    if (!token) return;
+    const token = session?.accessToken as string | undefined;
+    if (!token) {
+      setError('Sessao ainda carregando. Tente novamente em instantes.');
+      return;
+    }
     setError('');
     setLoading(true);
     try {
-      const groups = (await apiAuthFetch('/admin/whatsapp/groups', token)) as Group[];
-      setAvailable(groups);
+      const groups = (await apiAuthFetch('/admin/whatsapp/groups', token)) as
+        | Group[]
+        | null;
+      // Defensivo: garante um array mesmo se o backend devolver algo inesperado.
+      setAvailable(Array.isArray(groups) ? groups : []);
+      setSearched(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao buscar grupos.');
+      setAvailable([]);
+      setSearched(true);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Erro ao buscar grupos do WhatsApp.',
+      );
     } finally {
       setLoading(false);
     }
@@ -55,7 +73,7 @@ export function WhatsappGroupPicker({
           <span className="flex-1 text-sm text-green-800">
             {selectedName ?? 'Grupo selecionado'}
           </span>
-          <span className="text-xs text-gray-400 font-mono">{value}</span>
+          <span className="text-xs text-gray-400 font-mono break-all">{value}</span>
           <button
             type="button"
             onClick={() => onChange('')}
@@ -76,25 +94,37 @@ export function WhatsappGroupPicker({
       >
         {loading ? 'Buscando grupos...' : 'Buscar Grupos do WhatsApp'}
       </button>
-      {error && <p className="text-sm text-red-700">{error}</p>}
 
-      {available.length > 0 && (
+      {error && (
+        <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {searched && !error && (
         <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
-          {available.map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => onChange(g.id)}
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between ${
-                g.id === value ? 'bg-green-50' : ''
-              }`}
-            >
-              <span>{g.name}</span>
-              <span className="text-xs text-gray-400">
-                {g.id === value ? 'Selecionado' : 'Selecionar'}
-              </span>
-            </button>
-          ))}
+          {available.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-gray-500">
+              Nenhum grupo encontrado na instância conectada. Confira a conexão do
+              WhatsApp em Paróquia ou informe o ID manualmente abaixo.
+            </p>
+          ) : (
+            available.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => onChange(g.id)}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-green-50 flex items-center justify-between gap-2 ${
+                  g.id === value ? 'bg-green-50' : ''
+                }`}
+              >
+                <span className="flex-1">{g.name}</span>
+                <span className="text-xs text-gray-400 shrink-0">
+                  {g.id === value ? 'Selecionado' : 'Selecionar'}
+                </span>
+              </button>
+            ))
+          )}
         </div>
       )}
 
