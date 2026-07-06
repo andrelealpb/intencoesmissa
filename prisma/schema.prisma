@@ -364,6 +364,8 @@ model Team {
   name        String
   category    MinistryCategory @default(OTHER) // metadado p/ seed/relatório; não restringe
   description String?
+  // Grupo de WhatsApp da equipe (Z-API) — destino da convocação de disponibilidade (S6.5). Opcional.
+  whatsappGroupId String?      @map("whatsapp_group_id")
   isActive    Boolean          @default(true) @map("is_active")
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")

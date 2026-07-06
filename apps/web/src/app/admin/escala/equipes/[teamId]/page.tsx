@@ -280,12 +280,14 @@ interface MembershipForm {
   isCoordinator: boolean;
   maxAssignmentsPerMonth: string; // string p/ permitir vazio = sem teto
   priority: number;
+  sendInvite: boolean; // S6.5 — convite por WhatsApp ao vincular (default ligado)
 }
 const emptyMembershipForm: MembershipForm = {
   memberId: '',
   isCoordinator: false,
   maxAssignmentsPerMonth: '',
   priority: 0,
+  sendInvite: true,
 };
 
 function MembersTab({ teamId, token }: { teamId: string; token: string }) {
@@ -338,7 +340,11 @@ function MembersTab({ teamId, token }: { teamId: string; token: string }) {
         }
         await apiAuthFetch(`/admin/escala/teams/${teamId}/members`, token, {
           method: 'POST',
-          body: JSON.stringify({ memberId: form.memberId, ...buildPayload() }),
+          body: JSON.stringify({
+            memberId: form.memberId,
+            sendInvite: form.sendInvite,
+            ...buildPayload(),
+          }),
         });
       }
       setForm(emptyMembershipForm);
@@ -356,6 +362,7 @@ function MembersTab({ teamId, token }: { teamId: string; token: string }) {
       maxAssignmentsPerMonth:
         m.maxAssignmentsPerMonth == null ? '' : String(m.maxAssignmentsPerMonth),
       priority: m.priority,
+      sendInvite: true,
     });
     setError('');
   };
@@ -409,6 +416,16 @@ function MembersTab({ teamId, token }: { teamId: string; token: string }) {
             />
             Coordenador
           </label>
+          {!editingId && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
+              <input
+                type="checkbox"
+                checked={form.sendInvite}
+                onChange={(e) => setForm({ ...form, sendInvite: e.target.checked })}
+              />
+              Enviar convite por WhatsApp
+            </label>
+          )}
           <div>
             <label className="block text-xs text-gray-500 mb-1">Teto/mês (opcional)</label>
             <input

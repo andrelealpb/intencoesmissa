@@ -162,6 +162,7 @@ não fazer sem aprovação do Leal.
 | **S4** | Cadastro (frontend admin) | Páginas `/admin/escala/*`: equipes, funções, membros, qualificações, demanda | S3 | UI admin | a escrever |
 | **S5** | Auth de membro | `MemberAuthToken`, geração/validação de link mágico + OTP (WhatsApp/e-mail), JWT de membro, guard de membro | S1 (Member de S3) | Fluxo de login sem senha | `ESCALA_05_auth_membro.md` |
 | **S6** | Portal de disponibilidade | Membro loga por link, vê ocorrências do mês, marca disponibilidade; pré-preenchimento por `MemberAvailabilityRule` | S2, S5 | Portal do membro | a escrever |
+| **S6.5** | Convites + convocação | `Team.whatsappGroupId` (migração 14); convite individual no vínculo (`sendInvite` default true, link do portal); convocação por grupo na abertura do mês (1 msg/equipe, coordenador=própria, admin=escolhe), reusando a entrega Z-API — degradação graciosa | S4, S5, S6 | Convite + convocação | `ESCALA_06_5_convites_convocacao.md` |
 | **S7** | Motor de sugestão + montagem (backend) | Resolver staffing por ocorrência; gerar rascunho justo (guloso) respeitando qualificação/disponibilidade/teto/priority; endpoints rascunho/override/publish; visibilidade cruzada | S2, S3, S6 | Algoritmo + endpoints de escala | a escrever |
 | **S8** | UI de montagem (frontend coordenador) | Grade do mês, "sugerir distribuição", override manual, ver conflitos, publicar | S7 | UI do coordenador | a escrever |
 | **S9** | Lembretes + confirmação (worker) | Cron reusando padrão do worker; avisa membro/grupo X horas antes; coleta confirmar/recusar | S8 | Job de lembrete | a escrever |
@@ -193,6 +194,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S4 | ✅ | #10 | 2026-07-02 | Frontend admin do cadastro sob `/admin/escala/*` (Next.js App Router, espelhando o design do painel existente — `useSession` + `apiAuthFetch`, sem UI nova). Páginas: **Equipes** (lista/CRUD + botão opcional **Abrir mês** → materialização da S2), **detalhe da equipe** com abas Funções / Vínculos / Demanda, e **Membros** (nível paróquia, busca + paginação). Vínculos expõem `isCoordinator`, teto por equipe e `priority`; qualificações via replace-set das funções da equipe. Demanda: o alvo acompanha o escopo (WEEKDAY→dia, SCHEDULE→horário, OCCASION→exceção; DEFAULT/SOLEMNITY→nenhum) e combinação inválida fica **não submetível**. Warning de duplicata de telefone (201) exibido sem bloquear. `parishId` nunca no request (vem do JWT). Sem backend novo, sem UI de coordenador (S8). Web verde: typecheck/lint/test + `next build` das 3 rotas. |
 | S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
 | S6 | ✅ | #9 | 2026-07-02 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. |
+| S6.5 | ✅ | #16 | 2026-07-06 | Convites e convocação. **Migração 14** `add_team_whatsapp_group` (só `ADD COLUMN whatsapp_group_id` em `teams` — sem `ALTER`/`DROP` em Intenções). **Convite individual** disparado no vínculo (`POST teams/:teamId/members`, `sendInvite` default true): 1 msg WhatsApp com o **link do portal** (`/p/{slug}/escala/entrar`, sem OTP) via `EscalaNotifyService`, reusando a entrega Z-API da S5; **degradação graciosa** (sem Z-API/telefone/falha → cadastro conclui, só loga). **Convocação** (`POST /admin/escala/convoke`, `ConvocationController`/`ConvocationService`) = passo **separado** da materialização: 1 msg por `whatsappGroupId` de equipe; autorização reusa `EscalaAccessService.assertCanManageTeam` (coordenador só a própria equipe → 403 em alheia; admin escolhe equipes); equipe sem grupo → **pulada** com aviso no resumo (C5); resumo `sent/skipped/failed`. UI: campo de grupo na tela de equipe, checkbox "Enviar convite" marcado no vínculo, painel "Convocar equipes". Sem envio individual em massa (R1). CI verde (api 119, web 8, worker 8). |
 | S7 | ⬜ | — | — | — |
 | S8 | ⬜ | — | — | — |
 | S9 | ⬜ | — | — | — |
@@ -216,6 +218,53 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-06 — S6.5 (Convites e Convocação)** · PR #16
+  - **Dados — migração 14** `add_team_whatsapp_group`: coluna aditiva
+    `Team.whatsappGroupId` (`whatsapp_group_id TEXT`). **Só `ADD COLUMN`** na
+    tabela da Escala `teams` — nenhum `ALTER`/`DROP` em tabela de Intenções.
+    Cadastrável na tela de equipe (S4), com nota de ajuda de onde obter o ID.
+  - **`EscalaNotifyService`** (`apps/api/src/escala/escala-notify.service.ts`):
+    centraliza os envios de convite/convocação **reusando a entrega Z-API da S5**
+    (`WhatsappService`, credenciais por paróquia). Toda mensagem leva o **link do
+    portal** (`/p/{slug}/escala/entrar`) — o membro pede o código lá; **nunca**
+    embute OTP.
+  - **Convite individual (C1/C3)** disparado no **vínculo**
+    (`CadastroService.createMembership`, flag `sendInvite` — **default `true`**;
+    checkbox "Enviar convite por WhatsApp" **já marcado** na UI): 1 mensagem citando
+    a equipe e a paróquia. **Degradação graciosa** (padrão do sistema): sem Z-API,
+    sem telefone, ou falha de envio → o cadastro **conclui** e a falha é **logada**,
+    nunca quebra o cadastro nem vaza no response. Disparo no vínculo (e não no
+    `POST members`) por ser onde há equipe a citar (nota de decisão do doc).
+  - **Convocação de disponibilidade (C2/C4/C5)** — `ConvocationController` +
+    `ConvocationService`, endpoint `POST /admin/escala/convoke` sob
+    `EscalaAuthGuard`. **Passo separado da materialização** (S2): "Abrir mês" cria
+    as ocorrências independentemente; a convocação é uma ação à parte que **não**
+    bloqueia a materialização. **1 mensagem por grupo de equipe** (nunca 1 por
+    pessoa — saída desenhada para o R1). **Autorização reusa
+    `EscalaAccessService.assertCanManageTeam`** (nenhuma regra nova): equipes são
+    autorizadas **antes** de qualquer envio — coordenador só a **própria** equipe
+    (403 em alheia), pároco/admin escolhe as equipes; equipe de outra paróquia →
+    404. **C5:** equipe sem `whatsappGroupId` é **pulada** com aviso no resumo (não
+    é erro); paróquia sem Z-API idem; falha de envio vira `failed` sem derrubar as
+    outras. Resumo devolvido: `sent`/`skipped`/`failed` + motivo por equipe.
+  - **Frontend** (`apps/web`, `/admin/escala/*`): campo **"Grupo de WhatsApp"** na
+    tela de equipe; **checkbox "Enviar convite por WhatsApp"** (marcado) no vínculo;
+    painel **"Convocar equipes"** na página de equipes (mês + prazo opcional +
+    seleção de equipes, marcando as sem grupo, + resumo do envio).
+  - **Zod em `packages/shared`:** `whatsappGroupId` em `teamSchema`; `sendInvite`
+    em `teamMembershipSchema`; `convocationSchema` (`month`/`teamIds`/`deadline?`).
+  - **R1 respeitado:** nenhum envio individual em massa — convite é 1 msg por ação
+    humana pontual; convocação é 1 msg por grupo. Ainda é Z-API (WhatsApp
+    não-oficial); a saída definitiva para notificação individual recorrente segue
+    sendo a Cloud API oficial (registrado no R1; não bloqueia o MVP).
+  - **Verificação:** `pnpm -r typecheck`/`lint` (0 erros)/`test` **verdes** — **api
+    119** (novos: convite no vínculo, convocação/autorização/C5, degradação
+    graciosa do `EscalaNotifyService`), worker 8/8, web 8/8; `next build` compila as
+    rotas; `prisma validate` OK; migração aditiva conferida no diff. Intenções sem
+    regressão (worker/dispatch intocados — D9).
+  - **Fora de escopo (respeitado):** lembrete pré-missa (S9), envio individual em
+    massa, algoritmo (S7).
 
 - **2026-07-02 — S4 (Cadastro — Frontend admin)** · PR #10
   - Páginas de administração do módulo Escala sob `/admin/escala/*` no
