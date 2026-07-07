@@ -196,7 +196,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S6 | ✅ | #9 | 2026-07-02 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. |
 | S6.5 | ✅ | #16 | 2026-07-06 | Convites e convocação. **Migração 14** `add_team_whatsapp_group` (só `ADD COLUMN whatsapp_group_id` em `teams` — sem `ALTER`/`DROP` em Intenções). **Convite individual** disparado no vínculo (`POST teams/:teamId/members`, `sendInvite` default true): 1 msg WhatsApp com o **link do portal** (`/p/{slug}/escala/entrar`, sem OTP) via `EscalaNotifyService`, reusando a entrega Z-API da S5; **degradação graciosa** (sem Z-API/telefone/falha → cadastro conclui, só loga). **Convocação** (`POST /admin/escala/convoke`, `ConvocationController`/`ConvocationService`) = passo **separado** da materialização: 1 msg por `whatsappGroupId` de equipe; autorização reusa `EscalaAccessService.assertCanManageTeam` (coordenador só a própria equipe → 403 em alheia; admin escolhe equipes); equipe sem grupo → **pulada** com aviso no resumo (C5); resumo `sent/skipped/failed`. UI: campo de grupo na tela de equipe, checkbox "Enviar convite" marcado no vínculo, painel "Convocar equipes". Sem envio individual em massa (R1). CI verde (api 119, web 8, worker 8). |
 | S7 | ✅ | #32 | 2026-07-07 | Motor de sugestão (backend). Planner **puro** `planSchedule` (`apps/api/src/escala/suggest-schedule.ts`) reusando `resolveStaffing` (S3) e `resolveAvailability` (S6) — guloso, **determinístico** (J4), **nunca relaxa regra** (J3). Regras J1 (balanceamento da carga **total** no mês, todas as equipes), J2 (rodízio: desempate por `lastServedAt` — quem serviu há mais tempo primeiro; `priority` **não** é desempate de justiça). Decisões A1 (não escala quem "não informou"), A2 (só qualificado), A3 (teto por equipe — D8), A4 (uma pessoa por ocorrência — D4/Regime A, global), A5 (não sobrescreve rascunho — preenche só vaga vazia), A6 (só ativo). Endpoint `POST /escala/schedule/suggest` (`ScheduleController`/`SuggestionService`, `EscalaAuthGuard`): cria `Assignment` rascunho (`publishedAt=null`, `SCHEDULED`) e devolve `{ created, gaps }` com motivo por lacuna (`SEM_DISPONIVEL`/`SEM_QUALIFICADO`/`TODOS_NO_TETO`). Autorização por `EscalaAccessService` (coordenador só as próprias equipes; admin qualquer). Mês não materializado → 400 claro. **Sem UI/publicação (é S8); sem schema/migração novos** (reusa tabelas da S1). Doc `ESCALA_07`. CI verde (api 155). |
-| S8 | ⬜ | — | — | — |
+| S8 | 🚧 | #36 (PR 1/2) | 2026-07-07 | **PR 1 de 2 (backend) entregue** — endpoints de apoio da tela do coordenador: `GET /escala/schedule` (grade por missa: ocorrências + assignments rascunho/publicados + gaps recalculados + candidatos por vaga com `eligible`/`reason`/`conflict` via função pura `buildScheduleGrid`, reusando `resolveStaffing`/`resolveAvailability`), `POST /escala/assignments` (override consciente V2 → 422 sem `overrideReason`; unique(occurrence,member) → 409 V3; cria rascunho mesmo sobre publicado V4), `DELETE /escala/assignments/:id`, `POST /escala/schedule/publish` (carimba `publishedAt`+`republishedAt`; publicado editável; mudança pós-publicação detectável V4). **Migração 15** `add_assignment_override_and_republish` (aditiva: `override_reason`+`republished_at`, só `ADD COLUMN` em `assignments`). Autorização coordenador/admin (`EscalaAccessService`). **PR 2 (frontend/UI) pendente.** |
 | S9 | ⬜ | — | — | — |
 | S10 | ⬜ | — | — | — |
 
@@ -218,6 +218,58 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-07 — S8 · PR 1 de 2 (Tela do coordenador — backend/endpoints de apoio)** · PR #36
+  - **Migração 15** `add_assignment_override_and_republish`: colunas aditivas
+    `Assignment.overrideReason` (`override_reason TEXT`) e `Assignment.republishedAt`
+    (`republished_at TIMESTAMP(3)`). **Só `ADD COLUMN`** na tabela da Escala
+    `assignments` — nenhum `ALTER`/`DROP` em Intenções (D9). Aplica limpo em base
+    zerada (15 migrações) e **sem drift** (`migrate diff` = "No difference detected").
+  - **`GET /escala/schedule?month&teamId`** (`ScheduleController.grid` →
+    `ScheduleService.getGrid`): a **grade por missa** de uma equipe — ocorrências do
+    mês + assignments (rascunho e publicados) + **`gaps` recalculados** (mesma
+    taxonomia da S7: `SEM_QUALIFICADO`/`SEM_DISPONIVEL`/`TODOS_NO_TETO`) + por vaga a
+    lista **priorizada** de candidatos qualificados. Núcleo em **função pura**
+    `buildScheduleGrid` (`schedule-grid.ts`), **reusando** `resolveStaffing` (S3, D6)
+    e `resolveAvailability` (S6). Cada candidato leva as flags **`eligible`** /
+    **`reason`** (`INDISPONIVEL` A1 / `NO_TETO` A3 / `JA_NA_OCORRENCIA` A4) /
+    **`conflict`** (onde já serve nesta ocorrência — visibilidade cruzada D5/V3).
+    Elegíveis primeiro (por carga na equipe ↑), excluídos depois — determinístico.
+  - **`POST /escala/assignments`** (`AssignmentController` → `createAssignment`):
+    atribuição manual `{occurrenceId, functionId, memberId, overrideReason?}`. A
+    função identifica a equipe (autorizada via `assertCanManageTeam`). **V2 —
+    override consciente:** membro inelegível (indisponível A1 / no teto A3 / não
+    qualificado A2) **sem** `overrideReason` → **422** listando os motivos; **com**
+    `overrideReason` → cria e registra a justificativa. **V3 —** já escalado na
+    ocorrência (qualquer equipe, D4/Regime A global) → **409 claro** (pré-checagem
+    amigável + backstop `P2002` do `unique(occurrenceId, memberId)`). Cria **sempre
+    rascunho** (`publishedAt=null`), mesmo sobre escala publicada (V4);
+    `assignedByUserId`/`assignedByMemberId` conforme o realm.
+  - **`DELETE /escala/assignments/:id`** — remove (rascunho **ou** publicado — V4);
+    ownership por paróquia (404 não vaza); autorização por equipe. Hard delete
+    (preserva o `unique` livre para re-alocação).
+  - **`POST /escala/schedule/publish`** `{month, teamId}` — carimba `publishedAt`
+    (onde nulo) **e** `republishedAt` (selo) de todos os assignments vivos da
+    (equipe, mês), em `$transaction`. **Publicado continua editável** (V4); um
+    rascunho novo por cima (`publishedAt=null`) ou a re-selagem tornam a mudança
+    **detectável** para a S9 — **sem tabela de auditoria**. Coordenador só a própria
+    equipe. O GET devolve `publication: { publishedAt, published, hasUnpublishedChanges }`.
+  - **Decisão da sessão (V4):** adotado **`republishedAt`** (timestamp), não
+    `publishedVersion` — o mais simples que satisfaz "editável depois de publicado +
+    mudança detectável" **sem** uma tabela por (equipe, mês).
+  - **Autorização (reusa S5):** tudo sob `EscalaAuthGuard` +
+    `EscalaAccessService.assertCanManageTeam` — coordenador só as **próprias**
+    equipes (403 fora; 404 em outra paróquia); admin todas; `parishId` sempre do ator.
+  - **Zod em `packages/shared`:** `scheduleGridQuerySchema` (month+teamId),
+    `assignmentCreateSchema` (+ `overrideReason?`), `schedulePublishSchema`.
+  - **Fora de escopo (respeitado):** toda a **UI** (grade, painel por pessoa, modais
+    de override) → **PR 2 (frontend)**; lembrete/aviso pós-publicação → S9.
+  - **Verificação:** `pnpm -r typecheck`/`lint` (0 erros)/`test` **verdes** — **api
+    176** (21 novos: `buildScheduleGrid` — eligible/reason/conflict, gaps, ordenação;
+    `ScheduleService` — grade, publicação/V4, override/V2 → 422, contenda/V3 → 409,
+    autorização coordenador/admin, publish), worker 8/8, web 8/8; `prisma validate`
+    OK; `migrate deploy` limpo em base zerada + `migrate diff` sem drift; migração
+    aditiva conferida (só `assignments`). Intenções sem regressão (D9).
 
 - **2026-07-07 — S7 (Motor de sugestão — backend)** · PR #32
   - **Planner puro `planSchedule`** (`apps/api/src/escala/suggest-schedule.ts`),

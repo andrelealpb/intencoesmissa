@@ -11,7 +11,9 @@ import { EscalaNotifyService } from "./escala-notify.service";
 import { ConvocationController } from "./convocation.controller";
 import { ConvocationService } from "./convocation.service";
 import { ScheduleController } from "./schedule.controller";
+import { AssignmentController } from "./assignment.controller";
 import { SuggestionService } from "./suggestion.service";
+import { ScheduleService } from "./schedule.service";
 import { MemberPortalController } from "./member-portal.controller";
 import { AvailabilityService } from "./availability.service";
 import { MemberAuthController } from "./auth/member-auth.controller";
@@ -36,7 +38,11 @@ import { memberAuthConfig } from "./auth/member-auth.config";
  *   reusando a entrega Z-API. Materializacao segue independente do envio.
  * - S7: motor de sugestao (`ScheduleController`/`SuggestionService`) — rascunho
  *   guloso determinista via planner puro `planSchedule`, reusando
- *   `resolveStaffing` (S3) e `resolveAvailability` (S6). Nao publica (e S8).
+ *   `resolveStaffing` (S3) e `resolveAvailability` (S6).
+ * - S8 (backend): endpoints de apoio da tela do coordenador —
+ *   `ScheduleController.getGrid`/`publish` + `AssignmentController` sobre o
+ *   `ScheduleService` e o puro `buildScheduleGrid` (grade + candidatos
+ *   eligible/reason/conflict, override consciente V2, contenda V3, publicacao V4).
  *
  * O `JwtModule` local assina/verifica o JWT de MEMBRO com secret proprio,
  * scopeado a este modulo — nunca colide com o `JwtService` do admin (D1).
@@ -56,6 +62,7 @@ import { memberAuthConfig } from "./auth/member-auth.config";
     CadastroController,
     ConvocationController,
     ScheduleController,
+    AssignmentController,
     MemberAuthController,
     MemberPortalController,
   ],
@@ -66,6 +73,7 @@ import { memberAuthConfig } from "./auth/member-auth.config";
     EscalaNotifyService,
     ConvocationService,
     SuggestionService,
+    ScheduleService,
     AvailabilityService,
     MemberAuthService,
     MemberAuthTokenService,

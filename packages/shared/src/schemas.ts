@@ -388,6 +388,31 @@ export const scheduleSuggestSchema = z.object({
     .optional(),
 });
 
+// ── Montagem da escala — tela do coordenador (S8) ───────
+// GET /escala/schedule — grade do mês de UMA equipe (ocorrências + assignments
+// + gaps + candidatos por vaga). `teamId` obrigatório (coordenador só a própria).
+export const scheduleGridQuerySchema = z.object({
+  month: monthSchema,
+  teamId: uuidSchema,
+});
+
+// POST /escala/assignments — atribuição manual. `overrideReason` é exigido pelo
+// backend (V2) quando o membro é inelegível (indisponível / no teto / não
+// qualificado); o unique(occurrence, member) vira 409 claro (V3).
+export const assignmentCreateSchema = z.object({
+  occurrenceId: uuidSchema,
+  functionId: uuidSchema,
+  memberId: uuidSchema,
+  overrideReason: z.string().trim().min(1).max(280).optional(),
+});
+
+// POST /escala/schedule/publish — publica a escala de uma (equipe, mês): carimba
+// publishedAt/republishedAt. Coordenador só a própria equipe.
+export const schedulePublishSchema = z.object({
+  month: monthSchema,
+  teamId: uuidSchema,
+});
+
 // Horário "HH:mm" (00:00..23:59). Reusado por regra recorrente.
 const timeOfDaySchema = z
   .string()
@@ -481,3 +506,8 @@ export type ConvocationInput = z.infer<typeof convocationSchema>;
 
 // Escala — Motor de sugestão (S7)
 export type ScheduleSuggestInput = z.infer<typeof scheduleSuggestSchema>;
+
+// Escala — Montagem / tela do coordenador (S8)
+export type ScheduleGridQueryInput = z.infer<typeof scheduleGridQuerySchema>;
+export type AssignmentCreateInput = z.infer<typeof assignmentCreateSchema>;
+export type SchedulePublishInput = z.infer<typeof schedulePublishSchema>;

@@ -548,6 +548,8 @@ model Assignment {
   memberId           String           @map("member_id") @db.Uuid
   status             AssignmentStatus @default(SCHEDULED)
   publishedAt        DateTime?        @map("published_at") // null = rascunho
+  republishedAt      DateTime?        @map("republished_at") // último "selo" de publicação da (equipe, mês) — base p/ detectar mudança pós-publicação (S8/V4)
+  overrideReason     String?          @map("override_reason") // por que um inelegível foi escalado à mão (S8/V2)
   assignedByUserId   String?          @map("assigned_by_user_id") @db.Uuid // criado por admin (User)...
   assignedByMemberId String?          @map("assigned_by_member_id") @db.Uuid // ...ou por coordenador (Member)
   note               String?
