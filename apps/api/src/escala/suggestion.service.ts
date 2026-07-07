@@ -96,7 +96,6 @@ export class SuggestionService {
           where: { isActive: true, member: { isActive: true } },
           select: {
             memberId: true,
-            priority: true,
             maxAssignmentsPerMonth: true,
             qualifications: { select: { functionId: true } },
           },
@@ -119,7 +118,6 @@ export class SuggestionService {
       ),
       memberships: t.memberships.map((m) => ({
         memberId: m.memberId,
-        priority: m.priority,
         maxAssignmentsPerMonth: m.maxAssignmentsPerMonth,
         qualifiedFunctionIds: m.qualifications.map((q) => q.functionId),
       })),
@@ -131,8 +129,9 @@ export class SuggestionService {
     ];
 
     // 5. Estado do mês: atribuições vivas (exceto CANCELLED) em TODAS as equipes
-    //    (A4 é global por ocorrência), desvios explícitos e regras recorrentes.
-    const [existing, entryRows, ruleRows] = await Promise.all([
+    //    (A4 é global por ocorrência), desvios explícitos, regras recorrentes e o
+    //    histórico de serviço ANTES do mês (J2 — há quanto tempo cada um serviu).
+    const [existing, entryRows, ruleRows, historyRows] = await Promise.all([
       this.prisma.assignment.findMany({
         where: {
           parishId,
@@ -159,6 +158,19 @@ export class SuggestionService {
         ? this.prisma.memberAvailabilityRule.findMany({
             where: { memberId: { in: memberIds } },
             select: { memberId: true, weekday: true, time: true, available: true },
+          })
+        : Promise.resolve([]),
+      // J2: serviços anteriores ao mês, em QUALQUER equipe (a carga total da pessoa
+      // é que interessa). Reduzido à data mais recente por membro (lastServedAt).
+      memberIds.length
+        ? this.prisma.assignment.findMany({
+            where: {
+              parishId,
+              memberId: { in: memberIds },
+              status: { not: "CANCELLED" },
+              occurrence: { date: { lt: from } },
+            },
+            select: { memberId: true, occurrence: { select: { date: true } } },
           })
         : Promise.resolve([]),
     ]);
@@ -193,6 +205,14 @@ export class SuggestionService {
       rulesByMember.set(r.memberId, list);
     }
 
+    // J2: data (YYYY-MM-DD) do último serviço de cada membro antes do mês.
+    const lastServedByMember = new Map<string, string>();
+    for (const h of historyRows) {
+      const date = dayKey(h.occurrence.date);
+      const prev = lastServedByMember.get(h.memberId);
+      if (!prev || date > prev) lastServedByMember.set(h.memberId, date);
+    }
+
     // 7. Roda o algoritmo puro.
     const { toCreate, gaps } = planSchedule({
       occurrences: planOccurrences,
@@ -200,6 +220,7 @@ export class SuggestionService {
       existing: planExisting,
       entries,
       rulesByMember,
+      lastServedByMember,
     });
 
     // 8. Persiste os rascunhos (publishedAt=null). O planner garante que nenhum

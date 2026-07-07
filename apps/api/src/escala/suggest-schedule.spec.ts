@@ -39,7 +39,6 @@ function staffing(functionId: string, requiredCount: number): StaffingRule {
 interface MemberSpec {
   memberId: string;
   functions: string[];
-  priority?: number;
   cap?: number | null;
 }
 
@@ -61,7 +60,6 @@ function team(partial: {
     staffing: partial.staffing,
     memberships: partial.members.map((m) => ({
       memberId: m.memberId,
-      priority: m.priority ?? 100,
       maxAssignmentsPerMonth: m.cap === undefined ? null : m.cap,
       qualifiedFunctionIds: m.functions,
     })),
@@ -84,6 +82,7 @@ function baseInput(overrides: Partial<PlanInput> = {}): PlanInput {
     existing: [],
     entries: new Map(),
     rulesByMember: new Map(),
+    lastServedByMember: new Map(),
     ...overrides,
   };
 }
@@ -298,7 +297,7 @@ describe("planSchedule (S7 — motor de sugestão)", () => {
     expect(counts.get("m2")).toBe(1);
   });
 
-  it("J2: empate de carga desempata por priority (menor = mais forte)", () => {
+  it("J2: empate de carga desempata por há mais tempo sem servir (lastServedAt)", () => {
     const o = occ({ id: "o1" });
     const t = team({
       id: "t1",
@@ -306,21 +305,116 @@ describe("planSchedule (S7 — motor de sugestão)", () => {
       functions: [{ id: F1, name: "Cruz" }],
       staffing: [staffing(F1, 1)],
       members: [
-        { memberId: "m-b", functions: [F1], priority: 50 },
-        { memberId: "m-a", functions: [F1], priority: 10 }, // prioridade mais forte
+        // id "m-a" < "m-b", mas m-a serviu mais RECENTEMENTE → m-b entra primeiro.
+        { memberId: "m-a", functions: [F1] },
+        { memberId: "m-b", functions: [F1] },
       ],
     });
     const entries = new Map<string, { status: string }>();
     available(entries, "m-a", "o1");
     available(entries, "m-b", "o1");
+    const lastServedByMember = new Map<string, string>([
+      ["m-a", "2026-07-20"], // serviu há pouco
+      ["m-b", "2026-05-03"], // serviu há muito tempo
+    ]);
 
     const { toCreate } = planSchedule(
-      baseInput({ occurrences: [o], teams: [t], entries }),
+      baseInput({ occurrences: [o], teams: [t], entries, lastServedByMember }),
     );
 
-    // Mesmo com id "m-a" < "m-b", a escolha é por priority; aqui coincide, então
-    // trocamos: priority manda antes do id.
-    expect(toCreate[0].memberId).toBe("m-a");
+    // Desempate por lastServedAt (menor = há mais tempo), NÃO pelo id.
+    expect(toCreate[0].memberId).toBe("m-b");
+  });
+
+  it("J2: quem nunca serviu (sem lastServedAt) entra na frente de quem já serviu", () => {
+    const o = occ({ id: "o1" });
+    const t = team({
+      id: "t1",
+      name: "Coroinhas",
+      functions: [{ id: F1, name: "Cruz" }],
+      staffing: [staffing(F1, 1)],
+      members: [
+        { memberId: "m-a", functions: [F1] }, // já serviu
+        { memberId: "m-z", functions: [F1] }, // nunca serviu (ausente do mapa)
+      ],
+    });
+    const entries = new Map<string, { status: string }>();
+    available(entries, "m-a", "o1");
+    available(entries, "m-z", "o1");
+    const lastServedByMember = new Map<string, string>([["m-a", "2026-06-15"]]);
+
+    const { toCreate } = planSchedule(
+      baseInput({ occurrences: [o], teams: [t], entries, lastServedByMember }),
+    );
+
+    expect(toCreate[0].memberId).toBe("m-z");
+  });
+
+  it("J1 é a carga TOTAL no mês (todas as equipes), não só a da equipe", () => {
+    // m1 já tem uma atribuição na equipe t2 no mês (existente). Ao preencher t1,
+    // m2 (carga total 0) deve entrar antes de m1 (carga total 1), mesmo que t1
+    // esteja vazia para ambos.
+    const o = occ({ id: "o1" });
+    const t1 = team({
+      id: "t1",
+      name: "Coroinhas",
+      functions: [{ id: F1, name: "Cruz" }],
+      staffing: [staffing(F1, 1)],
+      members: [
+        { memberId: "m1", functions: [F1] },
+        { memberId: "m2", functions: [F1] },
+      ],
+    });
+    const entries = new Map<string, { status: string }>();
+    available(entries, "m1", "o1");
+    available(entries, "m2", "o1");
+    // m1 já serve outra ocorrência em t2 (conta na carga TOTAL do mês).
+    const existing: PlanExistingAssignment[] = [
+      { occurrenceId: "o-outra", teamId: "t2", functionId: "fx", memberId: "m1" },
+    ];
+
+    const { toCreate } = planSchedule(
+      baseInput({ occurrences: [o], teams: [t1], existing, entries }),
+    );
+
+    expect(toCreate[0].memberId).toBe("m2");
+  });
+
+  it("rodízio: equipe grande com todos empatados em 0 favorece quem serviu há mais tempo (não os primeiros da lista)", () => {
+    // 10 membros, ids "m00".."m09" já em ordem. lastServedAt DECRESCENTE com o id
+    // (m00 serviu mais recente; m09 há mais tempo). 4 ocorrências, 1 vaga cada.
+    const N = 10;
+    const memberIds = Array.from({ length: N }, (_, i) => `m${String(i).padStart(2, "0")}`);
+    const members: MemberSpec[] = memberIds.map((id) => ({ memberId: id, functions: [F1] }));
+    const occs = [
+      occ({ id: "o1", date: "2026-08-02" }),
+      occ({ id: "o2", date: "2026-08-09" }),
+      occ({ id: "o3", date: "2026-08-16" }),
+      occ({ id: "o4", date: "2026-08-23" }),
+    ];
+    const t = team({
+      id: "t1",
+      name: "Coroinhas",
+      functions: [{ id: F1, name: "Cruz" }],
+      staffing: [staffing(F1, 1)],
+      members,
+    });
+    const entries = new Map<string, { status: string }>();
+    const lastServedByMember = new Map<string, string>();
+    memberIds.forEach((id, i) => {
+      // m00 → 2026-07-20 (recente); m09 → 2026-07-11 (há mais tempo).
+      const day = String(20 - i).padStart(2, "0");
+      lastServedByMember.set(id, `2026-07-${day}`);
+      for (const o of occs) available(entries, id, o.id);
+    });
+
+    const { toCreate } = planSchedule(
+      baseInput({ occurrences: occs, teams: [t], entries, lastServedByMember }),
+    );
+
+    // Todos empatam em carga 0 → a ordem é por lastServedAt crescente: m09, m08,
+    // m07, m06 (quem serviu há mais tempo primeiro), NÃO m00/m01/m02/m03.
+    expect(toCreate.map((a) => a.memberId)).toEqual(["m09", "m08", "m07", "m06"]);
   });
 
   it("J4: determinístico — a saída independe da ordem de entrada", () => {
