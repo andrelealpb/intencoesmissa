@@ -375,6 +375,19 @@ export const convocationSchema = z.object({
   deadline: z.string().trim().max(60).optional(),
 });
 
+// ── Motor de sugestão de escala (S7) ────────────────────
+// Gera um rascunho de escala para o mês, preenchendo só as vagas vazias. Sem
+// `teamIds`, o backend usa o conjunto padrão do ator (admin → todas as equipes
+// da paróquia; coordenador → as que coordena).
+export const scheduleSuggestSchema = z.object({
+  month: monthSchema,
+  teamIds: z
+    .array(uuidSchema)
+    .min(1, "Selecione ao menos uma equipe")
+    .max(100, "Numero de equipes excede o limite")
+    .optional(),
+});
+
 // Horário "HH:mm" (00:00..23:59). Reusado por regra recorrente.
 const timeOfDaySchema = z
   .string()
@@ -465,3 +478,6 @@ export type MemberAvailabilityRulesInput = z.infer<
 
 // Escala — Convites e Convocação (S6.5)
 export type ConvocationInput = z.infer<typeof convocationSchema>;
+
+// Escala — Motor de sugestão (S7)
+export type ScheduleSuggestInput = z.infer<typeof scheduleSuggestSchema>;
