@@ -11,6 +11,13 @@
  *   - `resolveStaffing`     — demanda por função por ocorrência (escopo D6).
  *   - `resolveAvailability` — disponibilidade efetiva (`explicit > rule > default`).
  *
+ * **Justiça:** entre os elegíveis, ordena por **J1** (menos atribuições **no mês
+ * inteiro**, somando todas as equipes — balanceia a carga *total* da pessoa),
+ * depois **J2** (**há mais tempo sem servir** — `lastServedAt` menor primeiro,
+ * semeado do histórico anterior ao mês e atualizado durante a corrida), depois
+ * **J4** (`memberId`). O `TeamMembership.priority` **não** é desempate de
+ * justiça — resolve contenda entre equipes (D5) e fica para a S8.
+ *
  * **Determinístico (J4):** toda escolha e desempate usa ordenação total e
  * explícita; o algoritmo nunca depende da ordem de iteração do banco nem de
  * aleatoriedade. **Nunca relaxa uma regra (J3):** a vaga que não casa com as
@@ -53,7 +60,6 @@ export interface PlanFunction {
 
 export interface PlanMembership {
   memberId: string;
-  priority: number; // menor = mais forte (D5)
   maxAssignmentsPerMonth: number | null; // teto por equipe (D8); null = sem teto
   qualifiedFunctionIds: string[]; // funções que o membro pode exercer nesta equipe (A2)
 }
@@ -84,6 +90,9 @@ export interface PlanInput {
   entries: Map<string, { status: string }>;
   // Regras recorrentes por membro.
   rulesByMember: Map<string, AvailabilityRuleInput[]>;
+  // J2: data (YYYY-MM-DD) do último serviço do membro **antes** do mês. Ausente =
+  // nunca serviu (entra na frente do rodízio). Atualizado durante a corrida.
+  lastServedByMember: Map<string, string>;
 }
 
 export interface PlannedAssignment {
@@ -134,12 +143,17 @@ export function planSchedule(input: PlanInput): PlanResult {
 
   // Estado mutável do guloso, semeado pelas atribuições existentes (A5).
   const occupancy = new Set<string>(); // memberId|occurrenceId → já nessa ocorrência (A4)
-  const load = new Map<string, number>(); // memberId|teamId → carga na equipe no mês (A3)
+  const monthLoad = new Map<string, number>(); // memberId → carga TOTAL no mês, todas as equipes (J1)
+  const teamLoad = new Map<string, number>(); // memberId|teamId → carga na equipe no mês (A3/teto)
   const filled = new Map<string, number>(); // occ|team|func → vagas já preenchidas (A5)
+  // J2: último serviço do membro. Semeado do histórico anterior ao mês; atualizado
+  // durante a corrida ao escalar (menor = serviu há mais tempo = entra na frente).
+  const lastServed = new Map<string, string>(input.lastServedByMember);
 
   for (const a of input.existing) {
     occupancy.add(occMemberKey(a.memberId, a.occurrenceId));
-    load.set(memberTeamKey(a.memberId, a.teamId), (load.get(memberTeamKey(a.memberId, a.teamId)) ?? 0) + 1);
+    monthLoad.set(a.memberId, (monthLoad.get(a.memberId) ?? 0) + 1);
+    teamLoad.set(memberTeamKey(a.memberId, a.teamId), (teamLoad.get(memberTeamKey(a.memberId, a.teamId)) ?? 0) + 1);
     filled.set(slotKey(a.occurrenceId, a.teamId, a.functionId), (filled.get(slotKey(a.occurrenceId, a.teamId, a.functionId)) ?? 0) + 1);
   }
 
@@ -213,16 +227,19 @@ export function planSchedule(input: PlanInput): PlanResult {
         const eligible = availableQualified.filter((m) => {
           if (occupancy.has(occMemberKey(m.memberId, occ.id))) return false; // A4
           if (m.maxAssignmentsPerMonth == null) return true; // A3: sem teto
-          const current = load.get(memberTeamKey(m.memberId, team.id)) ?? 0;
-          return current < m.maxAssignmentsPerMonth;
+          const current = teamLoad.get(memberTeamKey(m.memberId, team.id)) ?? 0;
+          return current < m.maxAssignmentsPerMonth; // A3: teto é POR EQUIPE
         });
 
-        // Ordena por J1 (carga ↑) → J2 (priority ↑) → J4 (memberId ↑).
+        // Ordena por J1 (carga total no mês ↑) → J2 (há mais tempo sem servir,
+        // lastServed ↑; ausente = "" = nunca serviu, entra na frente) → J4 (id ↑).
         eligible.sort((a, b) => {
-          const la = load.get(memberTeamKey(a.memberId, team.id)) ?? 0;
-          const lb = load.get(memberTeamKey(b.memberId, team.id)) ?? 0;
+          const la = monthLoad.get(a.memberId) ?? 0;
+          const lb = monthLoad.get(b.memberId) ?? 0;
           if (la !== lb) return la - lb;
-          if (a.priority !== b.priority) return a.priority - b.priority;
+          const sa = lastServed.get(a.memberId) ?? "";
+          const sb = lastServed.get(b.memberId) ?? "";
+          if (sa !== sb) return byString(sa, sb);
           return byString(a.memberId, b.memberId);
         });
 
@@ -236,8 +253,12 @@ export function planSchedule(input: PlanInput): PlanResult {
             memberId: m.memberId,
           });
           occupancy.add(occMemberKey(m.memberId, occ.id));
-          load.set(memberTeamKey(m.memberId, team.id), (load.get(memberTeamKey(m.memberId, team.id)) ?? 0) + 1);
+          monthLoad.set(m.memberId, (monthLoad.get(m.memberId) ?? 0) + 1);
+          teamLoad.set(memberTeamKey(m.memberId, team.id), (teamLoad.get(memberTeamKey(m.memberId, team.id)) ?? 0) + 1);
           filled.set(key, (filled.get(key) ?? 0) + 1);
+          // J2: passa a ter servido nesta data (ocorrências processadas em ordem
+          // crescente de data → só avança).
+          lastServed.set(m.memberId, occ.date);
         }
 
         const missing = remaining - take;

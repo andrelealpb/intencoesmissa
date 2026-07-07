@@ -35,7 +35,6 @@ const TEAM_T1 = {
   memberships: [
     {
       memberId: "m1",
-      priority: 100,
       maxAssignmentsPerMonth: null,
       qualifications: [{ functionId: F1 }],
     },
@@ -64,6 +63,11 @@ const mockPrisma = {
   memberAvailabilityRule: { findMany: jest.fn() },
 };
 
+// Atribuições vivas no mês (in-month) e histórico anterior ao mês (J2).
+// A consulta de histórico é distinguida por `where.occurrence.date.lt`.
+let inMonthAssignments: unknown[] = [];
+let historyAssignments: unknown[] = [];
+
 describe("SuggestionService", () => {
   let service: SuggestionService;
 
@@ -77,11 +81,20 @@ describe("SuggestionService", () => {
     }).compile();
     service = module.get<SuggestionService>(SuggestionService);
 
+    inMonthAssignments = [];
+    historyAssignments = [];
+
     // Padrões: t1 é de p1; sem atribuições/regras; m1 disponível na o1.
     mockPrisma.team.findUnique.mockResolvedValue({ parishId: "p1" });
     mockPrisma.team.findMany.mockResolvedValue([TEAM_T1]);
     mockPrisma.massOccurrence.findMany.mockResolvedValue([OCC]);
-    mockPrisma.assignment.findMany.mockResolvedValue([]);
+    mockPrisma.assignment.findMany.mockImplementation((args: { where?: { occurrence?: { date?: { lt?: unknown } } } }) => {
+      // Consulta do histórico (J2): filtra por occurrence.date < início do mês.
+      if (args?.where?.occurrence?.date?.lt) {
+        return Promise.resolve(historyAssignments);
+      }
+      return Promise.resolve(inMonthAssignments);
+    });
     mockPrisma.assignment.createMany.mockResolvedValue({ count: 1 });
     mockPrisma.availabilityEntry.findMany.mockResolvedValue([
       { memberId: "m1", occurrenceId: "o1", status: "AVAILABLE" },
@@ -143,9 +156,9 @@ describe("SuggestionService", () => {
   });
 
   it("A5: vaga já preenchida não é recriada (created=0, sem gap)", async () => {
-    mockPrisma.assignment.findMany.mockResolvedValue([
+    inMonthAssignments = [
       { occurrenceId: "o1", teamId: "t1", functionId: F1, memberId: "m1" },
-    ]);
+    ];
     const result = await service.suggest(ADMIN, {
       month: "2026-08",
       teamIds: ["t1"],
@@ -171,6 +184,39 @@ describe("SuggestionService", () => {
     const result = await service.suggest(COORD, { month: "2026-08" });
     expect(result).toEqual({ created: 0, gaps: [] });
     expect(mockPrisma.assignment.createMany).not.toHaveBeenCalled();
+  });
+
+  it("J2: carrega o histórico anterior ao mês e escala quem serviu há mais tempo", async () => {
+    // Dois membros qualificados/disponíveis; m2 serviu há mais tempo que m1.
+    mockPrisma.team.findMany.mockResolvedValue([
+      {
+        ...TEAM_T1,
+        memberships: [
+          { memberId: "m1", maxAssignmentsPerMonth: null, qualifications: [{ functionId: F1 }] },
+          { memberId: "m2", maxAssignmentsPerMonth: null, qualifications: [{ functionId: F1 }] },
+        ],
+      },
+    ]);
+    mockPrisma.availabilityEntry.findMany.mockResolvedValue([
+      { memberId: "m1", occurrenceId: "o1", status: "AVAILABLE" },
+      { memberId: "m2", occurrenceId: "o1", status: "AVAILABLE" },
+    ]);
+    historyAssignments = [
+      { memberId: "m1", occurrence: { date: new Date(Date.UTC(2026, 6, 25)) } }, // 2026-07-25 (recente)
+      { memberId: "m2", occurrence: { date: new Date(Date.UTC(2026, 5, 1)) } }, // 2026-06-01 (há mais tempo)
+    ];
+
+    await service.suggest(ADMIN, { month: "2026-08", teamIds: ["t1"] });
+
+    // A consulta de histórico foi feita (where.occurrence.date.lt = início do mês).
+    const historyCall = mockPrisma.assignment.findMany.mock.calls.find(
+      (c) => c[0]?.where?.occurrence?.date?.lt,
+    );
+    expect(historyCall).toBeDefined();
+    // Só 1 vaga → escala m2 (serviu há mais tempo), não m1.
+    const arg = mockPrisma.assignment.createMany.mock.calls[0][0];
+    expect(arg.data).toHaveLength(1);
+    expect(arg.data[0].memberId).toBe("m2");
   });
 
   it("gap SEM_DISPONIVEL quando o membro não informou disponibilidade", async () => {

@@ -37,10 +37,10 @@ Body: { month: "YYYY-MM", teamIds?: string[] }
 
 | # | Regra | Descrição |
 |---|-------|-----------|
-| **J1** | **Balanceamento de carga** | Entre os elegíveis para uma vaga, escala primeiro quem tem **menos** atribuições na equipe naquele mês. Espalha o serviço; ninguém "carrega o mês" sozinho. |
-| **J2** | **Prioridade de equipe (D5)** | Desempate por `TeamMembership.priority` (**menor = mais forte**). O membro mais comprometido com aquela equipe entra primeiro. |
+| **J1** | **Balanceamento da carga total** | Entre os elegíveis para uma vaga, escala primeiro quem tem **menos atribuições no mês inteiro**, somando **todas as equipes** — balanceia a carga *total* da pessoa, não só a de uma equipe. Ninguém "carrega o mês" sozinho. |
+| **J2** | **Rodízio — há mais tempo sem servir** | Desempate por `lastServedAt` (data do **último** assignment do membro): quem serviu **há mais tempo** entra primeiro. Inicial = último serviço **antes do mês** (consulta única); **atualizado em memória** a cada alocação da corrida. Quem nunca serviu entra na frente. **Não** usa `TeamMembership.priority` (isso é contenda entre equipes — D5, fora do desempate de justiça). |
 | **J3** | **Nunca relaxa regra sozinho** | O algoritmo **jamais** preenche uma vaga violando qualificação, disponibilidade, teto ou exclusividade só para "não deixar buraco". Prefere **deixar a lacuna** e reportá-la. Relaxar é decisão humana (S8). |
-| **J4** | **Determinismo** | Mesma entrada → mesma saída. Toda escolha e desempate usa ordenação **total e explícita** (carga ↑, `priority` ↑, `memberId` ↑; ocorrências por data/hora/id; equipes por nome/id; funções por `sortOrder`/id). Nunca aleatório; nunca dependente da ordem do banco. |
+| **J4** | **Determinismo** | Mesma entrada → mesma saída. Toda escolha e desempate usa ordenação **total e explícita** (atribuições no mês ↑, `lastServedAt` ↑, `memberId` ↑; ocorrências por data/hora/id; equipes por nome/id; funções por `sortOrder`/id). Nunca aleatório; nunca dependente da ordem do banco. |
 
 ## 4. Decisões automáticas (A1–A6)
 
@@ -68,9 +68,13 @@ ordenada por `sortOrder`/id):
      Vazio → lacuna `SEM_DISPONIVEL`.
    - **elegíveis** = disponíveis que **não** estão nessa ocorrência (A4) e ainda
      **não** atingiram o teto (A3).
-3. Ordena elegíveis por **J1 → J2 → J4** e escala `min(remaining, elegíveis)`.
-   Cada atribuição atualiza a ocupação da ocorrência, a carga na equipe e o
-   preenchimento da vaga (o guloso "enxerga" o que acabou de escalar).
+3. Ordena elegíveis por **J1 → J2 → J4** — `(atribuições_no_mês ↑, lastServedAt ↑,
+   memberId ↑)` — e escala `min(remaining, elegíveis)`. Cada atribuição atualiza
+   a ocupação da ocorrência (A4), a carga total no mês (J1) e a carga na equipe
+   (teto/A3), o preenchimento da vaga (A5) e o `lastServedAt` do membro (J2 —
+   passa a "ter servido" naquela data). O guloso "enxerga" o que acabou de
+   escalar; como as ocorrências correm em ordem de data, o `lastServedAt` só
+   avança.
 4. Se sobrou vaga (`missing > 0`), registra a lacuna com o **motivo**:
    - `SEM_QUALIFICADO` — nenhum membro qualificado para a função na equipe.
    - `SEM_DISPONIVEL` — havia qualificados, mas **nenhum/insuficientes**
@@ -99,10 +103,13 @@ O algoritmo **não relaxa** nenhuma regra (J3): a lacuna é o resultado honesto.
   devolve `{ toCreate, gaps }`. Testável sem banco; reusa `resolveStaffing` e
   `resolveAvailability`. É onde vivem J1–J4 e A1–A6.
 - **`suggestion.service.ts`** — I/O: autoriza equipes (`EscalaAccessService`),
-  rejeita mês não materializado, carrega os dados, chama o planner, persiste os
-  rascunhos em `$transaction` (`status=SCHEDULED`, `publishedAt=null`,
+  rejeita mês não materializado, carrega os dados — incluindo o **histórico de
+  serviço anterior ao mês** (consulta única de assignments com `occurrence.date <
+  início do mês`, reduzida ao último por membro → `lastServedAt` inicial de J2) —,
+  chama o planner, persiste os rascunhos (`status=SCHEDULED`, `publishedAt=null`,
   `assignedByUserId`/`assignedByMemberId` conforme o realm) e devolve
-  `{ created, gaps }`.
+  `{ created, gaps }`. O `priority` **não** é lido para a sugestão (não entra no
+  desempate de justiça).
 - **`schedule.controller.ts`** — `POST /escala/schedule/suggest`, sob
   `EscalaAuthGuard`, valida o body com `scheduleSuggestSchema` (Zod, `shared`).
 
