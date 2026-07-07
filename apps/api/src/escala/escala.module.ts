@@ -10,6 +10,8 @@ import { EscalaAccessService } from "./escala-access.service";
 import { EscalaNotifyService } from "./escala-notify.service";
 import { ConvocationController } from "./convocation.controller";
 import { ConvocationService } from "./convocation.service";
+import { ScheduleController } from "./schedule.controller";
+import { SuggestionService } from "./suggestion.service";
 import { MemberPortalController } from "./member-portal.controller";
 import { AvailabilityService } from "./availability.service";
 import { MemberAuthController } from "./auth/member-auth.controller";
@@ -32,6 +34,9 @@ import { memberAuthConfig } from "./auth/member-auth.config";
  * - S6.5: convite individual no vinculo (`EscalaNotifyService`) + convocacao de
  *   grupo na abertura do mes (`ConvocationController`/`ConvocationService`),
  *   reusando a entrega Z-API. Materializacao segue independente do envio.
+ * - S7: motor de sugestao (`ScheduleController`/`SuggestionService`) — rascunho
+ *   guloso determinista via planner puro `planSchedule`, reusando
+ *   `resolveStaffing` (S3) e `resolveAvailability` (S6). Nao publica (e S8).
  *
  * O `JwtModule` local assina/verifica o JWT de MEMBRO com secret proprio,
  * scopeado a este modulo — nunca colide com o `JwtService` do admin (D1).
@@ -50,6 +55,7 @@ import { memberAuthConfig } from "./auth/member-auth.config";
     EscalaController,
     CadastroController,
     ConvocationController,
+    ScheduleController,
     MemberAuthController,
     MemberPortalController,
   ],
@@ -59,6 +65,7 @@ import { memberAuthConfig } from "./auth/member-auth.config";
     EscalaAccessService,
     EscalaNotifyService,
     ConvocationService,
+    SuggestionService,
     AvailabilityService,
     MemberAuthService,
     MemberAuthTokenService,

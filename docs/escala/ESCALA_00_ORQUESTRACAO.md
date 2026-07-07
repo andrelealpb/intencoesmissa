@@ -195,7 +195,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
 | S6 | ✅ | #9 | 2026-07-02 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. |
 | S6.5 | ✅ | #16 | 2026-07-06 | Convites e convocação. **Migração 14** `add_team_whatsapp_group` (só `ADD COLUMN whatsapp_group_id` em `teams` — sem `ALTER`/`DROP` em Intenções). **Convite individual** disparado no vínculo (`POST teams/:teamId/members`, `sendInvite` default true): 1 msg WhatsApp com o **link do portal** (`/p/{slug}/escala/entrar`, sem OTP) via `EscalaNotifyService`, reusando a entrega Z-API da S5; **degradação graciosa** (sem Z-API/telefone/falha → cadastro conclui, só loga). **Convocação** (`POST /admin/escala/convoke`, `ConvocationController`/`ConvocationService`) = passo **separado** da materialização: 1 msg por `whatsappGroupId` de equipe; autorização reusa `EscalaAccessService.assertCanManageTeam` (coordenador só a própria equipe → 403 em alheia; admin escolhe equipes); equipe sem grupo → **pulada** com aviso no resumo (C5); resumo `sent/skipped/failed`. UI: campo de grupo na tela de equipe, checkbox "Enviar convite" marcado no vínculo, painel "Convocar equipes". Sem envio individual em massa (R1). CI verde (api 119, web 8, worker 8). |
-| S7 | ⬜ | — | — | — |
+| S7 | ✅ | #32 | 2026-07-07 | Motor de sugestão (backend). Planner **puro** `planSchedule` (`apps/api/src/escala/suggest-schedule.ts`) reusando `resolveStaffing` (S3) e `resolveAvailability` (S6) — guloso, **determinístico** (J4), **nunca relaxa regra** (J3). Regras J1 (balanceamento da carga **total** no mês, todas as equipes), J2 (rodízio: desempate por `lastServedAt` — quem serviu há mais tempo primeiro; `priority` **não** é desempate de justiça). Decisões A1 (não escala quem "não informou"), A2 (só qualificado), A3 (teto por equipe — D8), A4 (uma pessoa por ocorrência — D4/Regime A, global), A5 (não sobrescreve rascunho — preenche só vaga vazia), A6 (só ativo). Endpoint `POST /escala/schedule/suggest` (`ScheduleController`/`SuggestionService`, `EscalaAuthGuard`): cria `Assignment` rascunho (`publishedAt=null`, `SCHEDULED`) e devolve `{ created, gaps }` com motivo por lacuna (`SEM_DISPONIVEL`/`SEM_QUALIFICADO`/`TODOS_NO_TETO`). Autorização por `EscalaAccessService` (coordenador só as próprias equipes; admin qualquer). Mês não materializado → 400 claro. **Sem UI/publicação (é S8); sem schema/migração novos** (reusa tabelas da S1). Doc `ESCALA_07`. CI verde (api 155). |
 | S8 | ⬜ | — | — | — |
 | S9 | ⬜ | — | — | — |
 | S10 | ⬜ | — | — | — |
@@ -218,6 +218,58 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-07 — S7 (Motor de sugestão — backend)** · PR #32
+  - **Planner puro `planSchedule`** (`apps/api/src/escala/suggest-schedule.ts`),
+    sem I/O: dado o mês (ocorrências + equipes), as atribuições existentes e a
+    disponibilidade, devolve `{ toCreate, gaps }`. **Reusa as funções puras já
+    testadas** — `resolveStaffing` (S3, demanda por escopo D6) e
+    `resolveAvailability` (S6, `explicit > rule > default`) — sem reimplementar
+    regra. É onde vivem J1–J4 e A1–A6. Testável sem banco.
+  - **Regras de justiça:** **J1** balanceamento da carga **total** no mês (escala
+    primeiro quem tem menos atribuições **somando todas as equipes**, não só a
+    equipe da vaga); **J2** **rodízio** — desempate por `lastServedAt` (data do
+    último assignment; quem serviu **há mais tempo** primeiro), semeado do
+    histórico **anterior ao mês** (consulta única) e **atualizado em memória** a
+    cada alocação; **`TeamMembership.priority` não é desempate de justiça** (é
+    contenda entre equipes — D5, fica para S8); **J3** o algoritmo **nunca
+    relaxa** qualificação/disponibilidade/teto/exclusividade — prefere a lacuna;
+    **J4** **determinístico** (ordenação total: `atribuições_no_mês↑,
+    lastServedAt↑, memberId↑`; ocorrências por data/hora/id; equipes por nome/id;
+    funções por sortOrder/id; nunca aleatório nem dependente da ordem do banco).
+  - **Decisões automáticas:** **A1** quem "não informou" (`default`) resolve
+    indisponível e **nunca** é escalado (opt-in S6); **A2** só quem tem a função
+    qualificada no vínculo; **A3** respeita o teto por equipe
+    (`maxAssignmentsPerMonth` — D8; `null` = sem teto); **A4** uma pessoa por
+    ocorrência (`unique(occurrenceId, memberId)` — D4/Regime A, **global** entre
+    equipes); **A5** **não sobrescreve rascunho** — preenche só
+    `requiredCount − atribuições existentes`, preservando o que já existe; **A6**
+    só `Member`/`TeamMembership` ativos.
+  - **Lacunas categorizadas** (`gaps`): `SEM_QUALIFICADO` (nenhum qualificado),
+    `SEM_DISPONIVEL` (havia qualificados, mas nenhum/insuficientes disponíveis) e
+    `TODOS_NO_TETO` (havia disponíveis, mas no teto ou já servindo na ocorrência).
+    Cada lacuna leva ocorrência/data/hora, equipe, função, `required`/`filled`/
+    `missing` e o motivo.
+  - **`SuggestionService` + `ScheduleController`** — `POST /escala/schedule/suggest`
+    (body `{ month, teamIds? }`) sob `EscalaAuthGuard`. Autoriza as equipes via
+    `EscalaAccessService.assertCanManageTeam` (coordenador só as próprias → 403 em
+    alheia, 404 em outra paróquia; admin qualquer). Sem `teamIds`: admin → todas
+    as equipes ativas da paróquia; coordenador → as que coordena. **Mês não
+    materializado → 400** com mensagem clara (materialização S2 é pré-requisito).
+    Cria os `Assignment` em rascunho (`publishedAt=null`, `SCHEDULED`,
+    `assignedByUserId`/`assignedByMemberId` conforme o realm) em `createMany`
+    (o planner garante zero colisão de A4 → unicidade nunca violada) e devolve
+    `{ created, gaps }`. `parishId` sempre do ator.
+  - **Zod em `packages/shared`:** `scheduleSuggestSchema` (`month` + `teamIds?`).
+  - **Sem schema/migração novos** — reusa as tabelas da S1 (aditivo puro; nada
+    tocado nas Intenções — D9). **Fora de escopo (respeitado):** UI de montagem,
+    override manual, visão de conflitos e **publicação** (S8); lembrete (S9).
+  - **Verificação:** `pnpm -r typecheck`/`lint` (0 erros)/`test` **verdes** —
+    **api 155** (26 novos: planner J1–J4/A1–A6, rodízio por lastServedAt e carga total, taxonomia de lacunas, escopo D6,
+    A4 global; service — auth admin/coordenador, rejeição de mês não
+    materializado, A5, `assignedBy` por realm, conjunto padrão de equipes),
+    worker 8/8, web 8/8; `prisma validate` OK (schema intocado). Intenções sem
+    regressão (worker/dispatch intocados — D9).
 
 - **2026-07-06 — S6.5 (Convites e Convocação)** · PR #16
   - **Dados — migração 14** `add_team_whatsapp_group`: coluna aditiva
