@@ -174,19 +174,24 @@ export class ScheduleService {
       })),
     };
 
-    const gridExisting: GridExistingAssignment[] = existing.map((a) => ({
-      assignmentId: a.id,
-      occurrenceId: a.occurrenceId,
-      teamId: a.teamId,
-      teamName: a.team.name,
-      functionId: a.functionId,
-      functionName: a.function.name,
-      memberId: a.memberId,
-      memberName: a.member.fullName,
-      status: a.status,
-      published: a.publishedAt != null,
-      overrideReason: a.overrideReason,
-    }));
+    // Uma recusa (DECLINED, S9/L4) NÃO ocupa mais a vaga: a excluímos da grade
+    // para a **lacuna reabrir** (o coordenador resolve — sem re-escala, D11/J3).
+    // Continua no `existing` bruto só para o marcador de publicação abaixo.
+    const gridExisting: GridExistingAssignment[] = existing
+      .filter((a) => a.status !== "DECLINED")
+      .map((a) => ({
+        assignmentId: a.id,
+        occurrenceId: a.occurrenceId,
+        teamId: a.teamId,
+        teamName: a.team.name,
+        functionId: a.functionId,
+        functionName: a.function.name,
+        memberId: a.memberId,
+        memberName: a.member.fullName,
+        status: a.status,
+        published: a.publishedAt != null,
+        overrideReason: a.overrideReason,
+      }));
 
     const planOccurrences: PlanOccurrence[] = occurrences.map((o) => ({
       id: o.id,
@@ -419,18 +424,29 @@ export class ScheduleService {
    * Estado de publicação da (equipe, mês) a partir das atribuições da equipe:
    *  - `publishedAt`          — último selo (`max republishedAt`); null = nunca publicada.
    *  - `published`            — há ao menos uma atribuição publicada.
-   *  - `hasUnpublishedChanges` — publicada E existe rascunho novo por cima
-   *                              (`publishedAt = null`) → mudança pós-publicação (V4).
+   *  - `hasUnpublishedChanges` — publicada E há mudança pós-publicação: rascunho
+   *                              novo por cima (`publishedAt = null`, V4) **ou** uma
+   *                              recusa de escala publicada (DECLINED — S9/L4).
+   *                              Reusa o marcador da S8 para sinalizar a lacuna.
    */
   private publicationState(
-    teamAssignments: { publishedAt: Date | null; republishedAt: Date | null }[],
+    teamAssignments: {
+      publishedAt: Date | null;
+      republishedAt: Date | null;
+      status: string;
+    }[],
   ) {
     let lastSeal: Date | null = null;
     let anyPublished = false;
     let anyDraft = false;
+    let anyPublishedDeclined = false;
     for (const a of teamAssignments) {
-      if (a.publishedAt != null) anyPublished = true;
-      else anyDraft = true;
+      if (a.publishedAt != null) {
+        anyPublished = true;
+        if (a.status === "DECLINED") anyPublishedDeclined = true;
+      } else {
+        anyDraft = true;
+      }
       if (a.republishedAt && (!lastSeal || a.republishedAt > lastSeal)) {
         lastSeal = a.republishedAt;
       }
@@ -438,7 +454,7 @@ export class ScheduleService {
     return {
       publishedAt: lastSeal ? lastSeal.toISOString() : null,
       published: anyPublished,
-      hasUnpublishedChanges: anyPublished && anyDraft,
+      hasUnpublishedChanges: anyPublished && (anyDraft || anyPublishedDeclined),
     };
   }
 }

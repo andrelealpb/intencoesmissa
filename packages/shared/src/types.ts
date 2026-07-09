@@ -71,3 +71,9 @@ export enum MemberAuthTokenType {
   MAGIC_LINK = "MAGIC_LINK",
   OTP = "OTP",
 }
+
+export enum ReminderKind {
+  GROUP_SUMMARY = "GROUP_SUMMARY",
+  INDIVIDUAL_EVE = "INDIVIDUAL_EVE",
+  INDIVIDUAL_DAY = "INDIVIDUAL_DAY",
+}

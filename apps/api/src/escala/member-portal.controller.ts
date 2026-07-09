@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Param,
   Query,
   Body,
   Req,
@@ -13,9 +14,12 @@ import {
   monthSchema,
   memberAvailabilityUpsertSchema,
   memberAvailabilityRulesSchema,
+  memberAssignmentsQuerySchema,
+  memberAssignmentStatusSchema,
 } from "@missas/shared";
 import { MemberJwtGuard } from "./auth/member-jwt.guard";
 import { AvailabilityService } from "./availability.service";
+import { MemberAssignmentService } from "./member-assignment.service";
 
 /**
  * Portal do voluntário (S6) — realm de MEMBRO, tudo sob `MemberJwtGuard`.
@@ -35,7 +39,10 @@ interface MemberRequest {
 @Controller("escala/me")
 @UseGuards(MemberJwtGuard, ThrottlerGuard)
 export class MemberPortalController {
-  constructor(private availability: AvailabilityService) {}
+  constructor(
+    private availability: AvailabilityService,
+    private assignments: MemberAssignmentService,
+  ) {}
 
   // GET /escala/me — perfil mínimo p/ o cabeçalho.
   @Get()
@@ -73,5 +80,29 @@ export class MemberPortalController {
   replaceRules(@Req() req: MemberRequest, @Body() body: unknown) {
     const input = memberAvailabilityRulesSchema.parse(body);
     return this.availability.replaceRules(req.member, input);
+  }
+
+  // GET /escala/me/assignments?from=YYYY-MM-DD&to=YYYY-MM-DD — minhas escalas
+  // publicadas (S9/L3). Só o próprio membro.
+  @Get("assignments")
+  myAssignments(@Req() req: MemberRequest, @Query() query: unknown) {
+    const parsed = memberAssignmentsQuerySchema.safeParse(query ?? {});
+    if (!parsed.success) {
+      throw new BadRequestException("Intervalo invalido (use from/to em YYYY-MM-DD)");
+    }
+    return this.assignments.listMine(req.member, parsed.data);
+  }
+
+  // PUT /escala/me/assignments/:id — confirma/recusa a própria escala publicada
+  // (S9/L3). Recusa marca DECLINED, reabre a lacuna na S8 e avisa o coordenador.
+  @Put("assignments/:id")
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  setAssignmentStatus(
+    @Req() req: MemberRequest,
+    @Param("id") id: string,
+    @Body() body: unknown,
+  ) {
+    const input = memberAssignmentStatusSchema.parse(body);
+    return this.assignments.setStatus(req.member, id, input);
   }
 }
