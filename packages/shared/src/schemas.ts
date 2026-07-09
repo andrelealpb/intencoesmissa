@@ -413,6 +413,25 @@ export const schedulePublishSchema = z.object({
   teamId: uuidSchema,
 });
 
+// ── Confirmação pelo portal (S9/L3) ─────────────────────
+// GET /escala/me/assignments?from=&to= — minhas escalas PUBLICADAS no intervalo.
+// `from`/`to` (YYYY-MM-DD) opcionais; o backend aplica um intervalo padrão.
+export const memberAssignmentsQuerySchema = z
+  .object({
+    from: isoDateSchema.optional(),
+    to: isoDateSchema.optional(),
+  })
+  .refine(
+    (v) => !(v.from && v.to) || v.from <= v.to,
+    "from deve ser anterior ou igual a to",
+  );
+
+// PUT /escala/me/assignments/:id — o membro confirma ou recusa a PRÓPRIA escala
+// publicada. Só CONFIRMED/DECLINED (SCHEDULED/CANCELLED são estados do sistema).
+export const memberAssignmentStatusSchema = z.object({
+  status: z.enum(["CONFIRMED", "DECLINED"]),
+});
+
 // Horário "HH:mm" (00:00..23:59). Reusado por regra recorrente.
 const timeOfDaySchema = z
   .string()
@@ -511,3 +530,11 @@ export type ScheduleSuggestInput = z.infer<typeof scheduleSuggestSchema>;
 export type ScheduleGridQueryInput = z.infer<typeof scheduleGridQuerySchema>;
 export type AssignmentCreateInput = z.infer<typeof assignmentCreateSchema>;
 export type SchedulePublishInput = z.infer<typeof schedulePublishSchema>;
+
+// Escala — Confirmação pelo portal (S9)
+export type MemberAssignmentsQueryInput = z.infer<
+  typeof memberAssignmentsQuerySchema
+>;
+export type MemberAssignmentStatusInput = z.infer<
+  typeof memberAssignmentStatusSchema
+>;

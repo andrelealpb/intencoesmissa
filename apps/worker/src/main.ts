@@ -4,6 +4,8 @@ import { DispatchService } from './dispatch.service';
 import { StorageService } from './storage.service';
 import { EmailService } from './email.service';
 import { WhatsappService } from './whatsapp.service';
+import { ReminderService } from './reminder.service';
+import { ZapiMessageProvider } from './message-provider';
 
 async function main() {
   const prisma = new PrismaClient();
@@ -22,6 +24,13 @@ async function main() {
   const whatsappService = new WhatsappService();
   const dispatchService = new DispatchService(prisma, storageService, emailService, whatsappService);
 
+  // Escala — Lembretes (S9): job SEPARADO do despacho das Intenções (D9). O
+  // envio fica atrás de uma interface de provedor (L6/R1): a Z-API é só a
+  // implementação atual; trocar por WhatsApp Cloud API é injetar outro provedor.
+  const messageProvider = new ZapiMessageProvider(whatsappService);
+  const portalBaseUrl = process.env.MEMBER_PORTAL_URL || 'http://localhost:3000';
+  const reminderService = new ReminderService(prisma, messageProvider, portalBaseUrl);
+
   await boss.start();
   console.log('PgBoss started');
 
@@ -38,7 +47,21 @@ async function main() {
     }
   });
 
-  console.log('Worker started, checking dispatches every minute');
+  // Cron isolado dos lembretes da Escala. Falha aqui NÃO afeta o despacho.
+  await boss.schedule('check-reminders', '* * * * *');
+  console.log('Scheduled check-reminders job every 1 minute');
+
+  await boss.work('check-reminders', async () => {
+    console.log(`[${new Date().toISOString()}] Running check-reminders job`);
+    try {
+      await reminderService.checkAndRemind();
+    } catch (error) {
+      console.error('Error in check-reminders job:', error);
+      throw error;
+    }
+  });
+
+  console.log('Worker started, checking dispatches and reminders every minute');
 
   const shutdown = async (signal: string) => {
     console.log(`Received ${signal}, shutting down gracefully...`);
