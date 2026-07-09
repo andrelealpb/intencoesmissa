@@ -3,6 +3,7 @@ import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
 import { AdminModule } from "../admin/admin.module";
 import { EscalaController } from "./escala.controller";
+import { OccurrenceController } from "./occurrence.controller";
 import { OccurrenceService } from "./occurrence.service";
 import { CadastroController } from "./cadastro.controller";
 import { CadastroService } from "./cadastro.service";
@@ -27,6 +28,10 @@ import { memberAuthConfig } from "./auth/member-auth.config";
 /**
  * Modulo Escala (bounded context separado).
  * - S2: materializacao de ocorrencias.
+ * - S2.1: gestao do mes aberto (`OccurrenceController` sob `/escala/occurrences`,
+ *   admin OU coordenador) — excluir ocorrencia avulsa (aviso+confirmacao se tem
+ *   escala/disponibilidade, a exclusao cascateia) e RECONCILIAR o mes com o
+ *   cadastro atual (orfa vazia sai direto; orfa com dado humano vira conflito).
  * - S3: cadastro backend (equipes, funcoes, membros, vinculos, qualificacoes,
  *   demanda).
  * - S5: realm de auth de membro (OTP/link magico), JWT de membro isolado
@@ -65,6 +70,7 @@ import { memberAuthConfig } from "./auth/member-auth.config";
   ],
   controllers: [
     EscalaController,
+    OccurrenceController,
     CadastroController,
     ConvocationController,
     ScheduleController,

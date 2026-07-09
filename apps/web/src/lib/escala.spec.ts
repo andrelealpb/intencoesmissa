@@ -3,6 +3,8 @@ import {
   buildPersonPanel,
   formatOccurrenceDate,
   conflictLabel,
+  weekdayOf,
+  affectedLabel,
   type GridCandidate,
   type GridOccurrence,
 } from './escala';
@@ -151,5 +153,32 @@ describe('buildPersonPanel', () => {
     const bia = buildPersonPanel(occurrences).find((p) => p.memberId === 'bia')!;
     expect(bia.count).toBe(0);
     expect(bia.services).toEqual([]);
+  });
+});
+
+describe('weekdayOf (S2.1)', () => {
+  it('deriva o dia da semana (base UTC) da data civil', () => {
+    expect(weekdayOf('2026-07-05')).toBe(0); // domingo
+    expect(weekdayOf('2026-07-08')).toBe(3); // quarta
+  });
+});
+
+describe('affectedLabel (S2.1)', () => {
+  it('descreve escala e disponibilidade que serão perdidas', () => {
+    expect(
+      affectedLabel({ assignmentCount: 3, publishedAssignmentCount: 0, availabilityCount: 5 }),
+    ).toBe('3 escalado(s) e 5 resposta(s) de disponibilidade');
+  });
+
+  it('destaca os já publicados', () => {
+    expect(
+      affectedLabel({ assignmentCount: 2, publishedAssignmentCount: 2, availabilityCount: 0 }),
+    ).toBe('2 escalado(s) (2 já publicado(s))');
+  });
+
+  it('só disponibilidade', () => {
+    expect(
+      affectedLabel({ assignmentCount: 0, publishedAssignmentCount: 0, availabilityCount: 4 }),
+    ).toBe('4 resposta(s) de disponibilidade');
   });
 });

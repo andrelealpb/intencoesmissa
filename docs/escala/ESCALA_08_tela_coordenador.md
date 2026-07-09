@@ -23,9 +23,6 @@ perde (D11 — o algoritmo sugere, o humano decide).
 - Endpoints de edição manual de assignment (criar/remover/trocar) e publicar.
 - Painel secundário **por pessoa** (conferência da distribuição).
 
-> **Divisão em dois PRs (decisão da sessão):** PR 1 = **backend** (endpoints de
-> apoio + migração aditiva — este PR); PR 2 = **frontend** (a UI do coordenador).
-
 **NÃO inclui:** lembrete/confirmação e aviso automático de mudança pós-publicação (S9);
 troca/substituição iniciada pelo membro (S10).
 
@@ -56,13 +53,6 @@ Tela e endpoints sob `EscalaAuthGuard` + `EscalaAccessService`: coordenador vê/
 
 > Migração provavelmente pequena e aditiva (`overrideReason`, talvez um campo de versão).
 > Justificar no PR; nada destrutivo; Intenções intocadas (D9).
->
-> **Decisão do PR 1:** adotado **`republishedAt`** (timestamp), não um contador de versão —
-> é o mais simples que satisfaz V4 **sem** tabela de (equipe, mês): publicar carimba
-> `publishedAt` (onde nulo) e `republishedAt` (selo) em todos os assignments vivos do conjunto.
-> Um rascunho novo sobre uma escala publicada (`publishedAt = null`) torna a mudança detectável
-> para a S9; re-publicar re-sela e zera o "pendente". Sem alteração destrutiva; Intenções
-> intocadas (só `ADD COLUMN` em `assignments`).
 
 ## Endpoints de apoio (realm coordenador/admin)
 
@@ -107,12 +97,6 @@ Reusar o design do painel admin (a S4 já estabeleceu o padrão do módulo). Tel
 - [ ] Autorização: coordenador só as próprias equipes (403 fora); admin todas.
 - [ ] Migração (se houver) aditiva; Intenções sem regressão; **CI verde**.
 
-> **Estado (PR 1 — backend):** endpoints de apoio, lógica de candidatos
-> (`eligible`/`reason`/`conflict`), override consciente (V2), contenda (V3),
-> publicação com detecção de mudança (V4), autorização e migração aditiva —
-> **entregues e testados**. Os itens de **UI** (grade, painel por pessoa, modais)
-> ficam para o **PR 2 (frontend)**.
-
 ## Testes sugeridos
 
 - E2E: suggest → grade com lacunas → override consciente (com reason) → publish → editar publicado.
@@ -123,34 +107,14 @@ Reusar o design do painel admin (a S4 já estabeleceu o padrão do módulo). Tel
 ## Relatório de Sessão (colar no PR)
 
 ```
-S8 — Tela do Coordenador · PR 1 de 2 (backend — endpoints de apoio)
-- Migração 15 add_assignment_override_and_republish (aditiva): assignments.override_reason
-  (TEXT) + assignments.republished_at (TIMESTAMP). Só ADD COLUMN em `assignments`; nenhum
-  ALTER/DROP em Intenções (D9). Aplica limpo em base zerada; sem drift (migrate diff = "No
-  difference detected").
-- GET /escala/schedule?month&teamId — grade por missa: ocorrências + assignments
-  (rascunho/publicados) + gaps recalculados + por vaga a lista priorizada de candidatos
-  qualificados com flags eligible/reason/conflict (V2/V3). Núcleo em função pura
-  `buildScheduleGrid` (reusa resolveStaffing S3 + resolveAvailability S6). ✔
-- POST /escala/assignments {occurrenceId, functionId, memberId, overrideReason?} — override
-  consciente: inelegível (indisponível / no teto / não qualificado) sem overrideReason → 422;
-  com overrideReason → cria e registra a justificativa (V2). unique(occurrence, member) →
-  409 claro, com pré-checagem amigável + backstop P2002 (V3). Cria sempre rascunho
-  (publishedAt=null), mesmo sobre escala publicada (V4). ✔
-- DELETE /escala/assignments/:id — remove (rascunho ou publicado); ownership por paróquia
-  (404 não vaza). ✔
-- POST /escala/schedule/publish {month, teamId} — carimba publishedAt (onde nulo) +
-  republishedAt (selo) da (equipe, mês); publicado continua editável; rascunho novo por cima
-  torna a mudança detectável (base p/ S9 — V4). Coordenador só a própria equipe. ✔
-- Autorização coordenador/admin via EscalaAuthGuard + EscalaAccessService.assertCanManageTeam
-  (S5): 403 em equipe alheia, 404 em outra paróquia; parishId sempre do ator. ✔
-- Zod em packages/shared: scheduleGridQuerySchema, assignmentCreateSchema, schedulePublishSchema.
-- CI verde: typecheck (todos), lint 0 erros, api 176 testes (21 novos: buildScheduleGrid +
-  ScheduleService), worker 8, web 8. Intenções sem regressão (worker/dispatch intocados — D9).
-- Observações / desvios: (1) `republishedAt` escolhido em vez de `publishedVersion` (mais
-  simples, sem tabela de (equipe, mês)). (2) Detecção de mudança pós-publicação cobre
-  adições (rascunho por cima) e re-selagem; deleção de item publicado usa hard delete
-  (preserva o unique p/ re-alocação) e não deixa rastro individual — aceito (sem tabela de
-  auditoria, conforme o doc). (3) `overrideReason` exigido também para "não qualificado",
-  além de indisponível/teto (superset consciente do V2). (4) UI = PR 2.
+S8 — Tela do Coordenador
+- Grade por missa (V1) + painel por pessoa p/ conferência ✔
+- "Sugerir" (S7) preenche só vazio (A5) ✔
+- Lacuna: lista priorizada; override consciente com overrideReason (V2) ✔
+- Contenda: candidato em outra equipe desabilitado/rotulado; duplicado → 409 (V3) ✔
+- Publicar por equipe/mês; publicado editável; mudança pós-publicação detectável (V4) ✔
+- Endpoints: GET schedule, POST assignments (override), DELETE assignment, POST publish ✔
+- Autorização coordenador/admin (S5) ✔
+- Migração aditiva (overrideReason / versão): <descrever> | Intenções sem regressão ✔ | CI verde ✔
+- Observações / desvios: <...>
 ```

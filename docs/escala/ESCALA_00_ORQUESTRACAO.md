@@ -158,6 +158,7 @@ não fazer sem aprovação do Leal.
 |----|------|----------|---------|-----------|-----|
 | **S1** | Fundação de dados | Mesclar schema Escala, back-relations, migração 12, seed de equipes/funções padrão | — | Migração + Prisma Client | `ESCALA_01_fundacao_dados.md` |
 | **S2** | Materialização de ocorrências | Gerar `MassOccurrence` p/ um intervalo, idempotente, preservando `isSolemnity`; endpoint p/ elevar solenidade | S1 | Serviço + endpoints admin | `ESCALA_02_materializacao_ocorrencias.md` |
+| **S2.1** | Gestão de ocorrências do mês aberto | `DELETE` de ocorrência avulsa (aviso+confirmação se tem escala/disponibilidade — cascateia) + `reconcile` do mês (órfã vazia sai direto; órfã com dado humano vira conflito p/ decisão manual, preservando o válido); UI de gestão do mês | S2, S4, S8 | Endpoints `/escala/occurrences/*` + UI | `ESCALA_S2_1_gestao_ocorrencias.md` |
 | **S3** | Cadastro (backend) | CRUD Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement + autorização dupla (admin ∪ coordenador) | S1 | Endpoints `/admin/escala/*` | `ESCALA_03_cadastro_backend.md` |
 | **S4** | Cadastro (frontend admin) | Páginas `/admin/escala/*`: equipes, funções, membros, qualificações, demanda | S3 | UI admin | a escrever |
 | **S5** | Auth de membro | `MemberAuthToken`, geração/validação de link mágico + OTP (WhatsApp/e-mail), JWT de membro, guard de membro | S1 (Member de S3) | Fluxo de login sem senha | `ESCALA_05_auth_membro.md` |
@@ -190,6 +191,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | M1a | ✅ | #3 | 2026-07-02 | Manutenção — CI ligado (gatilho ampliado p/ toda PR, incl. `claude/**`) + base verde (lint/typecheck/test em web/api/worker/shared). Resolve R5 e R7. **Não** toca schema/migração (drift R6 → PR-M1b (#4)). |
 | M1b | ✅ | #4 | 2026-07-02 | Drift R6 reconciliado só no `schema.prisma` (sem migração, sem `ALTER` em Intenções): `@default([])` em 4 arrays + `@default(dbgenerated("gen_random_uuid()"))` em `notices.id`. `migrate dev` → "Already in sync"; deploy zerado limpo; seed idempotente + smoke da Prisma Client OK. |
 | S2 | ✅ | #6 | 2026-07-02 | `OccurrenceService.materialize(parishId, from, to)` idempotente (upsert por `@@unique([parishId, date, time])`, preserva `isSolemnity`/`title` — D7); endpoints admin `POST materialize` / `GET list` / `PATCH :id`. Regra de missas **replicada** (não importada do worker — D9): exceção vence regular no mesmo horário. Convenção de solenidade: **(a)** — materializa `isSolemnity=false`, elevação manual via PATCH. Sem schema/migração novos. |
+| S2.1 | ✅ | #42 | 2026-07-09 | Gestão de ocorrências do mês aberto (correção do piloto). Novo `OccurrenceController` sob `/escala/occurrences` (`EscalaAuthGuard`, **admin ∪ coordenador** via `EscalaAccessService.assertCanManageOccurrences` — nível paróquia, autoridade lida do banco). **`DELETE :id[?force]`**: sem escala/disponibilidade remove direto; com dado humano e **sem `force`** devolve `{requiresConfirmation, affected}` (não apaga) para a UI avisar — a exclusão **cascateia** (`onDelete: Cascade`); `force=true` apaga. **`POST reconcile {month}`**: recalcula o esperado do cadastro atual (reusa `buildCandidates`, regra de S2 — D9), **adiciona** faltantes, **atualiza** preservando `isSolemnity`/título/escala/disponibilidade do válido (D7), órfã **vazia** sai direto (`removedClean`), órfã **com dado humano** vira **conflito** (nunca some sozinha). **`GET ?month`**: lista com indicadores (escala?/disponibilidade?/solenidade?/`inCadastro`). UI `/admin/escala/ocorrencias`: lista + modal de aviso na exclusão + "Reconciliar mês" com resumo e resolução por conflito (manter/excluir). Sem schema/migração (reusa tabelas da S1); Intenções intocadas (D9). CI verde (api 201, web 18, worker 30). |
 | S3 | ✅ | #7 | 2026-07-02 | Cadastro backend admin-only sob `/admin/escala/*`: CRUD de Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement no módulo existente `apps/api/src/escala` (`CadastroController`/`CadastroService`, convive com o `EscalaController` de S2). `parishId` sempre do JWT; ownership por paróquia (404 não vaza); P2002→409; qualificação valida função da equipe (400); soft-delete p/ entidades com histórico de assignment. Schemas Zod em `packages/shared` (`staffingRequirementSchema` = discriminated union por escopo). `EscalaAccessService` com gancho de coordenador `TODO(S5)`. Função pura `resolveStaffing` + testes dos 5 escopos e desempate por função (D6). Sem schema/migração novos (reusa tabelas da S1). |
 | S4 | ✅ | #10 | 2026-07-02 | Frontend admin do cadastro sob `/admin/escala/*` (Next.js App Router, espelhando o design do painel existente — `useSession` + `apiAuthFetch`, sem UI nova). Páginas: **Equipes** (lista/CRUD + botão opcional **Abrir mês** → materialização da S2), **detalhe da equipe** com abas Funções / Vínculos / Demanda, e **Membros** (nível paróquia, busca + paginação). Vínculos expõem `isCoordinator`, teto por equipe e `priority`; qualificações via replace-set das funções da equipe. Demanda: o alvo acompanha o escopo (WEEKDAY→dia, SCHEDULE→horário, OCCASION→exceção; DEFAULT/SOLEMNITY→nenhum) e combinação inválida fica **não submetível**. Warning de duplicata de telefone (201) exibido sem bloquear. `parishId` nunca no request (vem do JWT). Sem backend novo, sem UI de coordenador (S8). Web verde: typecheck/lint/test + `next build` das 3 rotas. |
 | S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
@@ -218,6 +220,67 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-09 — S2.1 (Gestão de ocorrências do mês aberto)** · PR #42
+  - **Correção do piloto:** a materialização (S2) preserva o que existe (upsert —
+    D7), então corrigir o cadastro de missas **depois** não removia a ocorrência
+    fantasma, e não havia UI para remover uma ocorrência avulsa. S2.1 dá ao
+    admin/coordenador as duas capacidades que faltavam, **sem** destruir dado
+    humano (escala/disponibilidade) sozinha.
+  - **Novo `OccurrenceController` sob `/escala/occurrences`** (`EscalaAuthGuard`),
+    **separado** do `EscalaController` de materialização (admin-only, sob
+    `/admin/escala/occurrences`, intocado). Autorização por
+    **`EscalaAccessService.assertCanManageOccurrences`** (método novo): ocorrência
+    é recurso **de nível paróquia** (a exclusão/reconciliação cascateia por todas
+    as equipes), então passa **admin** (dono) **ou** qualquer **coordenador ativo**
+    da paróquia (D2) — autoridade **lida do banco** a cada request.
+  - **`DELETE /escala/occurrences/:id[?force=true]`** — a exclusão **cascateia**
+    (`onDelete: Cascade` de `Assignment`/`AvailabilityEntry` → `MassOccurrence`, já
+    no schema da S1). Por isso: sem escala **e** sem disponibilidade → **remove
+    direto**; com dado humano e **sem `force`** → **não apaga**, devolve
+    `{ deleted: false, requiresConfirmation: true, occurrence, affected }` (contagem
+    de escalados/publicados/respostas) para a UI **avisar antes**; `force=true` →
+    apaga (o coordenador confirmou). Ownership por paróquia (**404 não vaza**).
+  - **`POST /escala/occurrences/reconcile { month }`** — recalcula o conjunto
+    **esperado** do cadastro **atual** (`MassSchedule` ativos + `MassException`),
+    **reusando a mesma regra da S2** (`buildCandidates`, extraída p/ um só lugar —
+    replicada, não importada do worker — D9). **Adiciona** faltantes; **atualiza**
+    (só a origem, preservando `isSolemnity`/título/escala/disponibilidade — D7) o
+    que continua válido; **órfã vazia** (sem escala e sem disponibilidade) → remove
+    direto (`removedClean`); **órfã com dado humano** → **NÃO** remove, vira
+    **conflito** devolvido p/ decisão manual (`conflicts: [{ occurrenceId, date,
+    time, hasAssignments, hasAvailability, assignmentCount, availabilityCount }]`).
+    Tudo numa `$transaction`. Resumo: `{ month, added, updated, removedClean,
+    conflicts }`.
+  - **`GET /escala/occurrences?month=YYYY-MM`** — lista da tela de gestão com
+    **indicadores**: `hasAssignments`/`assignmentCount`, `hasAvailability`/
+    `availabilityCount`, `isSolemnity` e **`inCadastro`** (`false` = órfã/fantasma —
+    o horário não existe mais no cadastro, candidata à reconciliação).
+  - **Regra que evita destruir dado (o coração da sessão):** reconciliação e
+    exclusão **nunca** apagam escala/disponibilidade sem decisão explícita. Remove
+    sozinha **só** o que está claramente **vazio e órfão**; qualquer dado humano
+    vira aviso (DELETE) ou conflito (reconcile).
+  - **UI `/admin/escala/ocorrencias`** (Next.js App Router, espelhando o painel
+    admin — `useSession` + `apiAuthFetch`): seletor de mês, lista com os
+    indicadores acima, ação **Excluir** com **modal de aviso** (mostra o que será
+    perdido — "N escalado(s) e M resposta(s)") antes de cascatear, e botão
+    **"Reconciliar mês"** com **resumo** (adicionadas/removidas/conflitos) e
+    **resolução por conflito** (Manter ou Excluir mesmo assim). Item "Ocorrências
+    do mês" adicionado à seção Escala da sidebar. Helpers puros em `lib/escala.ts`
+    (`weekdayOf`, `affectedLabel`).
+  - **Zod em `packages/shared`:** `reconcileMonthSchema` (`{ month }`). Sem novos
+    enums/tabelas.
+  - **Sem schema/migração novos** — reusa as tabelas da S1 (aditivo puro; nada
+    tocado nas Intenções — D9). **Fora de escopo (respeitado):** algoritmo (S7),
+    captura de disponibilidade (S6), dispatch das Intenções (D9).
+  - **Verificação:** `pnpm -r typecheck`/`lint` (0 erros; só warnings
+    pré-existentes)/`test` **verdes** — **api 201** (16 novos: reconcile —
+    adiciona/órfã vazia/órfã-com-escala/órfã-com-disponibilidade/preserva
+    solenidade+título/cenário do piloto; delete — vazia/aviso-sem-force/force/404
+    cross-parish; list — indicadores+`inCadastro`; access —
+    `assertCanManageOccurrences` admin ∪ coordenador ∪ 403), **web 18** (5 novos:
+    `weekdayOf`, `affectedLabel`), worker 30; `prisma validate` OK (schema
+    intocado). Intenções sem regressão (worker/dispatch intocados — D9).
 
 - **2026-07-09 — S9 (Lembretes e Confirmação)** · PR #40
   - **Dados — migração 16** `add_escala_reminders` (puramente aditiva):
