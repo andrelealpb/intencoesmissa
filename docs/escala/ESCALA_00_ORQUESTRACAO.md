@@ -195,7 +195,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S3 | ✅ | #7 | 2026-07-02 | Cadastro backend admin-only sob `/admin/escala/*`: CRUD de Team/TeamFunction/Member/TeamMembership/MembershipFunction/StaffingRequirement no módulo existente `apps/api/src/escala` (`CadastroController`/`CadastroService`, convive com o `EscalaController` de S2). `parishId` sempre do JWT; ownership por paróquia (404 não vaza); P2002→409; qualificação valida função da equipe (400); soft-delete p/ entidades com histórico de assignment. Schemas Zod em `packages/shared` (`staffingRequirementSchema` = discriminated union por escopo). `EscalaAccessService` com gancho de coordenador `TODO(S5)`. Função pura `resolveStaffing` + testes dos 5 escopos e desempate por função (D6). Sem schema/migração novos (reusa tabelas da S1). |
 | S4 | ✅ | #10 | 2026-07-02 | Frontend admin do cadastro sob `/admin/escala/*` (Next.js App Router, espelhando o design do painel existente — `useSession` + `apiAuthFetch`, sem UI nova). Páginas: **Equipes** (lista/CRUD + botão opcional **Abrir mês** → materialização da S2), **detalhe da equipe** com abas Funções / Vínculos / Demanda, e **Membros** (nível paróquia, busca + paginação). Vínculos expõem `isCoordinator`, teto por equipe e `priority`; qualificações via replace-set das funções da equipe. Demanda: o alvo acompanha o escopo (WEEKDAY→dia, SCHEDULE→horário, OCCASION→exceção; DEFAULT/SOLEMNITY→nenhum) e combinação inválida fica **não submetível**. Warning de duplicata de telefone (201) exibido sem bloquear. `parishId` nunca no request (vem do JWT). Sem backend novo, sem UI de coordenador (S8). Web verde: typecheck/lint/test + `next build` das 3 rotas. |
 | S5 | ✅ | #8 | 2026-07-02 | Realm de auth de membro: fluxo `request→verify` (OTP via WhatsApp) + link mágico (e-mail Brevo) sobre `MemberAuthToken`, hash em repouso, uso único, TTL, invalidação em novo request, teto de 5 tentativas (coluna aditiva `attempts` — migração 13). Anti-enumeração (200 genérico) + rate limit (`ThrottlerGuard`) em request/verify. `MemberJwtStrategy`/`MemberJwtGuard` com `MEMBER_JWT_SECRET` separado; `EscalaAuthGuard` composto (admin ∪ membro → `req.actor`). `EscalaAccessService`: ramo de coordenador **ativado** (autorização lida do banco — `TODO(S5)` fechado); endpoints da S3 refatorados p/ a matriz de permissão (nível paróquia = admin-only; nível equipe = admin ∪ coordenador da equipe; `isCoordinator` continua admin-only). Env novas no `.env.example`. Admin/Intenções intactos (D1). CI verde. |
-| S6 | ✅ | #9 | 2026-07-02 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. |
+| S6 | ✅ | #9 · redesign #46 | 2026-07-02 · 2026-07-09 | Portal do voluntário `/p/{slug}/escala/*` (login OTP + callback do link mágico consumindo a API da S5; visão do mês com autosave por toggle; editor de regra recorrente). Endpoints do realm de membro `/escala/me`, `/escala/me/occurrences`, `/escala/me/availability`, `/escala/me/rules` sob `MemberJwtGuard` (`memberId`/`parishId` sempre do JWT). Resolvedor puro `resolveAvailability` (precedência `explicit > rule > default`, devolve `source`) reusado no GET de ocorrências — regra recorrente **não** materializa entries (refino consciente do comentário do schema — U3). Opt-in (U1), binário na UI (U4), anti-enumeração da S5 preservada. Sem schema/migração novos. **Redesign de UI (usabilidade do piloto — PR #46):** regra recorrente protagonista no topo (chips de dia da semana, autosave), navegação **semana a semana** atravessando a virada do mês, **linhas compactas** (dia+hora+toggle de um toque) e distinção visual **sem resposta × indisponível × disponível** (preenchimento codifica a origem: sólido = à mão, tonalizado = pela regra, tracejado âmbar = sem resposta). **Só frontend** — endpoints/`resolveAvailability` intocados; autosave por toggle preservado. |
 | S6.5 | ✅ | #16 | 2026-07-06 | Convites e convocação. **Migração 14** `add_team_whatsapp_group` (só `ADD COLUMN whatsapp_group_id` em `teams` — sem `ALTER`/`DROP` em Intenções). **Convite individual** disparado no vínculo (`POST teams/:teamId/members`, `sendInvite` default true): 1 msg WhatsApp com o **link do portal** (`/p/{slug}/escala/entrar`, sem OTP) via `EscalaNotifyService`, reusando a entrega Z-API da S5; **degradação graciosa** (sem Z-API/telefone/falha → cadastro conclui, só loga). **Convocação** (`POST /admin/escala/convoke`, `ConvocationController`/`ConvocationService`) = passo **separado** da materialização: 1 msg por `whatsappGroupId` de equipe; autorização reusa `EscalaAccessService.assertCanManageTeam` (coordenador só a própria equipe → 403 em alheia; admin escolhe equipes); equipe sem grupo → **pulada** com aviso no resumo (C5); resumo `sent/skipped/failed`. UI: campo de grupo na tela de equipe, checkbox "Enviar convite" marcado no vínculo, painel "Convocar equipes". Sem envio individual em massa (R1). CI verde (api 119, web 8, worker 8). |
 | S7 | ✅ | #32 | 2026-07-07 | Motor de sugestão (backend). Planner **puro** `planSchedule` (`apps/api/src/escala/suggest-schedule.ts`) reusando `resolveStaffing` (S3) e `resolveAvailability` (S6) — guloso, **determinístico** (J4), **nunca relaxa regra** (J3). Regras J1 (balanceamento da carga **total** no mês, todas as equipes), J2 (rodízio: desempate por `lastServedAt` — quem serviu há mais tempo primeiro; `priority` **não** é desempate de justiça). Decisões A1 (não escala quem "não informou"), A2 (só qualificado), A3 (teto por equipe — D8), A4 (uma pessoa por ocorrência — D4/Regime A, global), A5 (não sobrescreve rascunho — preenche só vaga vazia), A6 (só ativo). Endpoint `POST /escala/schedule/suggest` (`ScheduleController`/`SuggestionService`, `EscalaAuthGuard`): cria `Assignment` rascunho (`publishedAt=null`, `SCHEDULED`) e devolve `{ created, gaps }` com motivo por lacuna (`SEM_DISPONIVEL`/`SEM_QUALIFICADO`/`TODOS_NO_TETO`). Autorização por `EscalaAccessService` (coordenador só as próprias equipes; admin qualquer). Mês não materializado → 400 claro. **Sem UI/publicação (é S8); sem schema/migração novos** (reusa tabelas da S1). Doc `ESCALA_07`. CI verde (api 155). |
 | S8 | ✅ | #36 (PR 1/2) · PR 2 (frontend) | 2026-07-07 | **PR 1 de 2 (backend) — #36:** endpoints de apoio da tela do coordenador: `GET /escala/schedule` (grade por missa: ocorrências + assignments rascunho/publicados + gaps recalculados + candidatos por vaga com `eligible`/`reason`/`conflict` via função pura `buildScheduleGrid`, reusando `resolveStaffing`/`resolveAvailability`), `POST /escala/assignments` (override consciente V2 → 422 sem `overrideReason`; unique(occurrence,member) → 409 V3; cria rascunho mesmo sobre publicado V4), `DELETE /escala/assignments/:id`, `POST /escala/schedule/publish` (carimba `publishedAt`+`republishedAt`; publicado editável; mudança pós-publicação detectável V4). **Migração 15** `add_assignment_override_and_republish` (aditiva: `override_reason`+`republished_at`, só `ADD COLUMN` em `assignments`). Autorização coordenador/admin (`EscalaAccessService`). **PR 2 (frontend/UI):** tela `/admin/escala/montagem` reusando o design do painel admin — grade do mês por missa (V1) com vagas por função, nomes preenchidos e lacunas destacadas com motivo; "Sugerir distribuição" (S7, só preenche vazio — A5); resolução de vaga (V2) com lista priorizada (elegíveis, depois excluídos rotulados) + modal de override consciente com `overrideReason`; contenda (V3) com candidato em outra equipe desabilitado/rotulado; publicar por equipe/mês (V4, segue editável); painel por pessoa (contagem + datas) para conferência da justiça. Sem tocar endpoints (são do PR 1). **CI verde** (web 14). |
@@ -220,6 +220,63 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-09 — S6-redesign (Portal de Disponibilidade — usabilidade)** · PR #46
+  - **Motivo (piloto):** a tela antiga listava as ~30 missas do mês numa coluna
+    vertical de cartões grandes — no celular, rolagem interminável e ~30 toques
+    para informar um mês; a regra recorrente (que deveria ser o caminho
+    principal) ficava escondida e colapsada. O redesign **inverte a hierarquia**.
+    **Só a UI muda** — nada nos endpoints `/escala/me/*` nem no resolvedor
+    `resolveAvailability` da S6 (backend intocado, D9 respeitado).
+  - **Regra recorrente protagonista (R1):** card em destaque no topo, **aberto
+    por padrão**, com a frase "Sempre disponível em:" + **chips de dia da semana**
+    (Dom…Sáb). Ligar um chip grava uma regra de dia inteiro disponível e
+    **pré-preenche o mês** (o pré-preenchimento reflete no recarregamento). Um
+    **autosave coalescido** (debounce 400ms) transforma toques rápidos em vários
+    chips num único PUT — sem perder toque. Disclosure secundário **"Preciso de um
+    horário específico"** preserva a capacidade completa do backend (dia + horário
+    + disponível/indisponível) fora do caminho principal (salvamento explícito).
+  - **Navegação semana a semana (R2):** as ocorrências do mês são agrupadas em
+    semanas (Dom..Sáb, função pura `groupIntoWeeks`); o voluntário vê ~7–10 missas
+    por vez com setas anterior/próxima e o rótulo "Semana de 5 a 11 de julho". A
+    navegação **atravessa a virada do mês** (chegou na última semana → carrega o
+    mês seguinte e cai na 1ª semana; `shiftMonth`), e o rótulo do mês é um atalho
+    para o seletor nativo (pulo direto). Abre na semana de **hoje** quando o mês é
+    o corrente. **Nunca** a lista vertical do mês inteiro.
+  - **Linhas compactas + toggle de um toque (R3/R4):** cada missa é uma linha
+    (dia + hora + solenidade), com um segmentado **Livre / Não** de um toque
+    (binário — MAYBE não exposto, U4). Alvos de toque ≥44px, mobile-first.
+  - **Três estados visualmente distintos (R5 + U1):** `availabilityView` mapeia
+    (status + source) para **`available` (verde)** × **`unavailable` (ardósia)** ×
+    **`unanswered` (âmbar, tracejado)**. "Sem resposta" (default) resolve
+    indisponível (opt-in preservado) mas é **visualmente diferente** do indisponível
+    marcado — linha tracejada âmbar + legenda "Sem resposta" + contador
+    "N missas sem resposta nesta semana". O **preenchimento do toggle codifica a
+    origem**: sólido = "Você marcou", tonalizado (tint + ring) = "Pela sua regra",
+    apagado/tracejado = "Sem resposta". Reset "seguir a regra" (CLEAR) quando há
+    desvio explícito.
+  - **Skill `frontend-design` aplicada:** tema da paróquia reusado (paleta
+    `primary` azul + cartões/rounded do formulário público — identidade, não
+    default genérico); a estrutura é informação (regra no topo, semana como ritmo,
+    origem no preenchimento); copy na voz do produto ("Pela sua regra" / "Você
+    marcou" / "Sem resposta"; estado vazio "A escala deste mês ainda não foi aberta
+    pela coordenação."); mobile-first, `focus-visible`, `motion-safe`, alvos
+    grandes, pouca rolagem.
+  - **Helpers puros em `apps/web/src/lib/escala.ts`** (testáveis, precedente da
+    S8/S2.1): `groupIntoWeeks`, `weekStartOf`, `weekRangeLabel`, `monthLabel`,
+    `formatRowDay`, `shiftMonth`, `availabilityView`, `availabilityOrigin`,
+    `isDayWideAvailable`, `dayWideAvailableWeekdays` + tipos do portal.
+  - **Backend intocado (respeitado):** endpoints `/escala/me/*` e
+    `resolveAvailability` iguais; **autosave por toggle segue funcionando** (mesmo
+    contrato `AVAILABLE|UNAVAILABLE|CLEAR`). Sem schema/migração; Intenções sem
+    regressão (D9).
+  - **Verificação:** `pnpm -r typecheck`/`lint` (0 erros; só warnings
+    pré-existentes)/`test` **verdes** — **web 35** (16 novos: `availabilityView`
+    três estados/`availabilityOrigin`, `weekStartOf`, `weekRangeLabel` incl. virada
+    de mês, `monthLabel`, `formatRowDay`, `shiftMonth` incl. virada de ano,
+    `groupIntoWeeks` — agrupa/conta sem-resposta/vazio, chips de regra), **api 201**,
+    **worker 30**; `next build` compila `/p/[slug]/escala`. Conferência de UX em
+    tela de celular fica para o Leal (o CI não pega usabilidade de tela pequena).
 
 - **2026-07-09 — S2.1 (Gestão de ocorrências do mês aberto)** · PR #42
   - **Correção do piloto:** a materialização (S2) preserva o que existe (upsert —
