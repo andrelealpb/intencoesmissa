@@ -927,7 +927,8 @@ FROM node:22-slim
 # pnpm install --frozen-lockfile
 # prisma generate
 # Build: shared → api
-# Entrypoint: migrate deploy → seed → node apps/api/dist/main.js
+# Entrypoint: migrate deploy → node apps/api/dist/main.js
+# (seed NÃO roda no deploy — rodar `pnpm db:seed` manualmente em banco novo)
 EXPOSE 3001
 ```
 

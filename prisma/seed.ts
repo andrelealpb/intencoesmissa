@@ -51,7 +51,6 @@ async function main() {
     { weekday: 0, time: '08:00' },
     { weekday: 0, time: '10:00' },
     { weekday: 0, time: '18:00' },
-    { weekday: 3, time: '19:00' },
     { weekday: 5, time: '19:00' },
     { weekday: 6, time: '18:00' },
   ];
