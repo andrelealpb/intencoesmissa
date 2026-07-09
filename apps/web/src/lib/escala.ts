@@ -392,6 +392,200 @@ export function weekdayOf(date: string): number {
   return new Date(date + 'T00:00:00.000Z').getUTCDay();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Portal de disponibilidade do voluntário (S6 / redesign).
+// Helpers PUROS (sem I/O) para o portal `/p/{slug}/escala`: agrupamento por
+// semana, rótulos e a leitura visual dos três estados (sem resposta ×
+// indisponível × disponível). O backend (endpoints `/escala/me/*` e o resolvedor
+// `resolveAvailability`) fica intocado — aqui só se apresenta melhor o que ele já
+// devolve (status + source).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type PortalStatus = 'AVAILABLE' | 'UNAVAILABLE';
+export type PortalSource = 'explicit' | 'rule' | 'default';
+
+export interface PortalAvailability {
+  status: PortalStatus;
+  source: PortalSource;
+}
+
+export interface PortalOccurrence {
+  id: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  title: string | null;
+  isSolemnity: boolean;
+  availability: PortalAvailability;
+}
+
+// Regra recorrente do membro (replace-set de `/escala/me/rules`).
+export interface PortalRule {
+  id?: string;
+  weekday: number;
+  time: string | null; // null = dia inteiro
+  available: boolean;
+}
+
+export const weekdayNames = [
+  'Domingo',
+  'Segunda',
+  'Terça',
+  'Quarta',
+  'Quinta',
+  'Sexta',
+  'Sábado',
+];
+
+const monthNamesPt = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+];
+
+// A leitura visual da linha — três apresentações distintas (R5 + diretriz #4):
+//   'available'   verde   — disponível (por regra ou marcado à mão)
+//   'unavailable' ardósia — indisponível marcado (por regra ou à mão)
+//   'unanswered'  âmbar   — sem resposta (default): resolve indisponível, mas
+//                           visualmente distinto do que foi marcado.
+export type AvailabilityView = 'available' | 'unavailable' | 'unanswered';
+
+export function availabilityView(a: PortalAvailability): AvailabilityView {
+  if (a.source === 'default') return 'unanswered';
+  return a.status === 'AVAILABLE' ? 'available' : 'unavailable';
+}
+
+// Origem legível, na voz do produto (a skill enfatiza copy consistente).
+export function availabilityOrigin(source: PortalSource): string {
+  switch (source) {
+    case 'rule':
+      return 'Pela sua regra';
+    case 'explicit':
+      return 'Você marcou';
+    default:
+      return 'Sem resposta';
+  }
+}
+
+// ── Datas civis (base UTC, para não escorregar de fuso) ──────────────────────
+
+function parseCivil(date: string): Date {
+  return new Date(date + 'T00:00:00.000Z');
+}
+
+function toCivil(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDaysCivil(date: string, days: number): string {
+  const d = parseCivil(date);
+  d.setUTCDate(d.getUTCDate() + days);
+  return toCivil(d);
+}
+
+// Domingo da semana que contém `date` (semana Dom..Sáb, espelhando a ordem de
+// `weekdayNames`/`weekdayAbbrev`).
+export function weekStartOf(date: string): string {
+  return addDaysCivil(date, -weekdayOf(date));
+}
+
+// Cabeçalho compacto da linha: { abbr: 'Dom', label: '13/07' }.
+export function formatRowDay(date: string): { abbr: string; label: string } {
+  const d = parseCivil(date);
+  const abbr = weekdayAbbrev[d.getUTCDay()] ?? '';
+  const label = `${String(d.getUTCDate()).padStart(2, '0')}/${String(
+    d.getUTCMonth() + 1,
+  ).padStart(2, '0')}`;
+  return { abbr, label };
+}
+
+// "julho de 2026" a partir de 'YYYY-MM'.
+export function monthLabel(month: string): string {
+  const [year, mon] = month.split('-').map(Number);
+  const name = monthNamesPt[(mon ?? 1) - 1] ?? '';
+  return `${name} de ${year}`;
+}
+
+// "6 a 12 de julho" (mesmo mês) ou "29 de junho a 5 de julho" (vira o mês).
+export function weekRangeLabel(start: string, end: string): string {
+  const s = parseCivil(start);
+  const e = parseCivil(end);
+  const sd = s.getUTCDate();
+  const ed = e.getUTCDate();
+  const sm = monthNamesPt[s.getUTCMonth()];
+  const em = monthNamesPt[e.getUTCMonth()];
+  if (s.getUTCMonth() === e.getUTCMonth()) {
+    return `${sd} a ${ed} de ${em}`;
+  }
+  return `${sd} de ${sm} a ${ed} de ${em}`;
+}
+
+export interface PortalWeek {
+  start: string; // domingo (YYYY-MM-DD)
+  end: string; // sábado (YYYY-MM-DD)
+  label: string; // "6 a 12 de julho"
+  occurrences: PortalOccurrence[];
+  unanswered: number; // quantas ainda sem resposta (para o aviso da semana)
+}
+
+// Agrupa as ocorrências do mês em semanas (Dom..Sáb). Só semanas que têm missa
+// aparecem — o voluntário navega ~7–10 missas por vez (R2), nunca a lista
+// inteira. Assume a lista já ordenada por data/hora (o backend ordena assim).
+export function groupIntoWeeks(occurrences: PortalOccurrence[]): PortalWeek[] {
+  const byWeek = new Map<string, PortalOccurrence[]>();
+  for (const occ of occurrences) {
+    const start = weekStartOf(occ.date);
+    const bucket = byWeek.get(start);
+    if (bucket) bucket.push(occ);
+    else byWeek.set(start, [occ]);
+  }
+  return [...byWeek.keys()]
+    .sort()
+    .map((start) => {
+      const list = byWeek.get(start)!;
+      const end = addDaysCivil(start, 6);
+      return {
+        start,
+        end,
+        label: weekRangeLabel(start, end),
+        occurrences: list,
+        unanswered: list.filter((o) => o.availability.source === 'default')
+          .length,
+      };
+    });
+}
+
+// Mês vizinho ('YYYY-MM' ± 1), para a navegação semana a semana atravessar a
+// virada de mês sem exigir o seletor.
+export function shiftMonth(month: string, delta: number): string {
+  const [year, mon] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(year, mon - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+// Uma regra é "dia inteiro, sempre disponível" (o protagonista: chip de dia da
+// semana) quando não tem horário e é disponível.
+export function isDayWideAvailable(rule: PortalRule): boolean {
+  return rule.time === null && rule.available === true;
+}
+
+// Os dias da semana cobertos por uma regra "sempre disponível" (chips ligados).
+export function dayWideAvailableWeekdays(rules: PortalRule[]): Set<number> {
+  const set = new Set<number>();
+  for (const rule of rules) {
+    if (isDayWideAvailable(rule)) set.add(rule.weekday);
+  }
+  return set;
+}
+
 // Frase do que será perdido ao excluir — "3 escalados e 5 respostas de disponibilidade".
 export function affectedLabel(affected: OccurrenceAffected): string {
   const parts: string[] = [];

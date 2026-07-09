@@ -5,8 +5,20 @@ import {
   conflictLabel,
   weekdayOf,
   affectedLabel,
+  availabilityView,
+  availabilityOrigin,
+  weekStartOf,
+  weekRangeLabel,
+  monthLabel,
+  formatRowDay,
+  shiftMonth,
+  groupIntoWeeks,
+  isDayWideAvailable,
+  dayWideAvailableWeekdays,
   type GridCandidate,
   type GridOccurrence,
+  type PortalOccurrence,
+  type PortalRule,
 } from './escala';
 
 function candidate(over: Partial<GridCandidate>): GridCandidate {
@@ -180,5 +192,134 @@ describe('affectedLabel (S2.1)', () => {
     expect(
       affectedLabel({ assignmentCount: 0, publishedAssignmentCount: 0, availabilityCount: 4 }),
     ).toBe('4 resposta(s) de disponibilidade');
+  });
+});
+
+// ── Portal de disponibilidade (S6 / redesign) ────────────────────────────────
+
+function occ(over: Partial<PortalOccurrence>): PortalOccurrence {
+  return {
+    id: 'o',
+    date: '2026-07-08',
+    time: '19:00',
+    title: null,
+    isSolemnity: false,
+    availability: { status: 'UNAVAILABLE', source: 'default' },
+    ...over,
+  };
+}
+
+describe('availabilityView — três estados distintos (R5)', () => {
+  it('sem resposta (default) → unanswered, mesmo resolvendo indisponível', () => {
+    expect(
+      availabilityView({ status: 'UNAVAILABLE', source: 'default' }),
+    ).toBe('unanswered');
+  });
+
+  it('indisponível marcado é distinto de sem resposta', () => {
+    expect(
+      availabilityView({ status: 'UNAVAILABLE', source: 'explicit' }),
+    ).toBe('unavailable');
+    expect(
+      availabilityView({ status: 'UNAVAILABLE', source: 'rule' }),
+    ).toBe('unavailable');
+  });
+
+  it('disponível (regra ou manual) → available', () => {
+    expect(
+      availabilityView({ status: 'AVAILABLE', source: 'rule' }),
+    ).toBe('available');
+    expect(
+      availabilityView({ status: 'AVAILABLE', source: 'explicit' }),
+    ).toBe('available');
+  });
+});
+
+describe('availabilityOrigin — copy na voz do produto', () => {
+  it('mapeia cada origem', () => {
+    expect(availabilityOrigin('rule')).toBe('Pela sua regra');
+    expect(availabilityOrigin('explicit')).toBe('Você marcou');
+    expect(availabilityOrigin('default')).toBe('Sem resposta');
+  });
+});
+
+describe('weekStartOf — semana começa no domingo', () => {
+  it('quarta 08/07/2026 → domingo 05/07', () => {
+    expect(weekStartOf('2026-07-08')).toBe('2026-07-05');
+  });
+  it('domingo devolve o próprio dia', () => {
+    expect(weekStartOf('2026-07-05')).toBe('2026-07-05');
+  });
+  it('sábado 11/07 ainda pertence à semana de 05/07', () => {
+    expect(weekStartOf('2026-07-11')).toBe('2026-07-05');
+  });
+});
+
+describe('weekRangeLabel / monthLabel / formatRowDay', () => {
+  it('semana no mesmo mês', () => {
+    expect(weekRangeLabel('2026-07-05', '2026-07-11')).toBe('5 a 11 de julho');
+  });
+  it('semana que vira o mês', () => {
+    expect(weekRangeLabel('2026-06-28', '2026-07-04')).toBe(
+      '28 de junho a 4 de julho',
+    );
+  });
+  it('rótulo do mês', () => {
+    expect(monthLabel('2026-07')).toBe('julho de 2026');
+  });
+  it('cabeçalho compacto da linha', () => {
+    expect(formatRowDay('2026-07-08')).toEqual({ abbr: 'Qua', label: '08/07' });
+  });
+});
+
+describe('shiftMonth — vizinho, atravessa o ano', () => {
+  it('avança e recua', () => {
+    expect(shiftMonth('2026-07', 1)).toBe('2026-08');
+    expect(shiftMonth('2026-07', -1)).toBe('2026-06');
+  });
+  it('vira o ano', () => {
+    expect(shiftMonth('2026-12', 1)).toBe('2027-01');
+    expect(shiftMonth('2026-01', -1)).toBe('2025-12');
+  });
+});
+
+describe('groupIntoWeeks — navegação semana a semana (R2)', () => {
+  it('agrupa por semana, conta sem-resposta e só inclui semanas com missa', () => {
+    const weeks = groupIntoWeeks([
+      occ({ id: 'a', date: '2026-07-05', availability: { status: 'AVAILABLE', source: 'rule' } }),
+      occ({ id: 'b', date: '2026-07-08' }), // default → sem resposta
+      occ({ id: 'c', date: '2026-07-12' }), // próxima semana (dom 12)
+    ]);
+    expect(weeks).toHaveLength(2);
+    expect(weeks[0].start).toBe('2026-07-05');
+    expect(weeks[0].end).toBe('2026-07-11');
+    expect(weeks[0].occurrences.map((o) => o.id)).toEqual(['a', 'b']);
+    expect(weeks[0].unanswered).toBe(1);
+    expect(weeks[0].label).toBe('5 a 11 de julho');
+    expect(weeks[1].start).toBe('2026-07-12');
+    expect(weeks[1].occurrences.map((o) => o.id)).toEqual(['c']);
+  });
+
+  it('lista vazia → nenhuma semana', () => {
+    expect(groupIntoWeeks([])).toEqual([]);
+  });
+});
+
+describe('regras "sempre disponível" (protagonista R1)', () => {
+  const rules: PortalRule[] = [
+    { weekday: 0, time: null, available: true }, // domingo dia inteiro → chip
+    { weekday: 3, time: null, available: true }, // quarta dia inteiro → chip
+    { weekday: 0, time: '10:00', available: true }, // horário específico → não é chip
+    { weekday: 5, time: null, available: false }, // dia inteiro indisponível → não é chip
+  ];
+
+  it('isDayWideAvailable distingue o chip do ajuste fino', () => {
+    expect(isDayWideAvailable(rules[0])).toBe(true);
+    expect(isDayWideAvailable(rules[2])).toBe(false);
+    expect(isDayWideAvailable(rules[3])).toBe(false);
+  });
+
+  it('dayWideAvailableWeekdays devolve só os dias dos chips', () => {
+    expect([...dayWideAvailableWeekdays(rules)].sort()).toEqual([0, 3]);
   });
 });
