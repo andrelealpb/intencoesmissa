@@ -1,124 +1,138 @@
-# ESCALA — S7 · Motor de sugestão (backend)
+# S7 — Motor de Sugestão de Escala (Algoritmo)
 
-> Briefing autocontido da Sessão S7. Ler junto com o orquestrador
-> (`ESCALA_00_ORQUESTRACAO.md`) — em especial **D4, D5, D6, D11** e a **Seção 1.1**.
-> Prereqs: **S2, S3, S6** `✅`.
+> Documento de sessão de execução. Ler junto com `ESCALA_00_ORQUESTRACAO.md`
+> (decisões D4, D5, D6, D11 e Seção 1.1) e o `CLAUDE.md` do repo.
+> **Prereqs:** S2 (`✅` ocorrências), S3 (`✅` staffing + `resolveStaffing`), S6 (`✅`
+> disponibilidade + `resolveAvailability`). Precisa dos três.
 
-## 1. Objetivo
+## Objetivo
 
-Gerar, para um **mês**, um **rascunho** de escala (`Assignment` com
-`publishedAt = null`) preenchendo as vagas vazias de cada ocorrência com um
-**algoritmo guloso determinístico**, respeitando qualificação, disponibilidade,
-teto e prioridade. O algoritmo **sugere**; o humano sobrescreve (D11). Esta
-sessão **não** faz UI nem publicação (é S8) — apenas o endpoint de sugestão.
+O clímax do módulo: pegar disponibilidade + demanda + qualificação + prioridade e **montar
+um rascunho de escala** para um mês — um algoritmo **guloso, justo e explicável**. Ele
+**sugere**; o coordenador revisa/sobrescreve e publica na S8 (D11 — escala manual assistida).
 
-Reusa **as funções puras já existentes**, sem reimplementar regra:
-- `resolveStaffing` (S3) — demanda por função por ocorrência, escopo D6.
-- `resolveAvailability` (S6) — disponibilidade efetiva (`explicit > rule > default`).
+## Escopo
 
-## 2. Endpoint
+**Inclui (backend apenas):**
+- Serviço `SuggestionService` com o algoritmo guloso.
+- Endpoint que gera o rascunho para (equipe(s), mês), criando `Assignment` em rascunho
+  (`publishedAt = null`).
+- Reuso das funções puras `resolveStaffing` (S3) e `resolveAvailability` (S6).
+- **Relatório de lacunas** (vagas que ficaram abertas + motivo).
+
+**NÃO inclui:** UI (S8) · publicação da escala (S8) · lembretes (S9). O algoritmo cria
+rascunho; a tela e o "publicar" são S8.
+
+**Migração:** provavelmente nenhuma (usa `Assignment`, `AvailabilityEntry`, etc. da S1).
+Se precisar de campo auxiliar (ex.: `lastServedAt` cacheado), justificar; preferir calcular.
+
+## Regras de justiça travadas (confirmadas com o Leal)
+
+| # | Regra | Como implementa |
+|---|-------|-----------------|
+| J1 | **Contagem igual no mês**, desempate por **há mais tempo sem servir**. | Guloso: para cada vaga, entre elegíveis, escolhe o de **menos assignments no mês**; empate → menor `lastServedAt` (quem serviu há mais tempo). |
+| J2 | **Espaçamento é preferência, nunca bloqueio.** | Já coberto por J1 (o desempate favorece quem serviu há mais tempo). Não recusa repetir alguém — equipe pequena (7 comentaristas/~30 missas) precisa repetir. |
+| J3 | **Vaga sem elegível fica ABERTA e é reportada.** Nunca relaxa regra sozinho. | Se nenhum elegível, não preenche; registra no relatório de lacunas com o motivo. Coordenador decide na S8. |
+| J4 | **Preencher da função mais escassa para a mais abundante.** | Ordenar as funções de cada ocorrência por nº de qualificados disponíveis (ascendente) antes de alocar. Cerimoniário (poucos) antes de credência (muitos). |
+
+## Decisões automáticas (decorrem do que já foi travado)
+
+| # | Decisão | Base |
+|---|---------|------|
+| A1 | Só entra quem está **disponível** (`resolveAvailability` = AVAILABLE, explícito ou por regra). "Não informou" (`default`) **não** é elegível. | Opt-in (U1). |
+| A2 | Só entra quem é **qualificado** para a função (`MembershipFunction`) e é membro **ativo** da equipe. | Modelo (S3). |
+| A3 | Respeita o **teto por equipe** (`maxAssignmentsPerMonth`): quem atingiu o teto no mês sai da lista de elegíveis. | D8. |
+| A4 | Respeita `@@unique(occurrenceId, memberId)`: ninguém em duas funções na mesma missa. Se já alocado naquela ocorrência (qualquer equipe), inelegível para outra vaga da mesma missa. | D4/D5. |
+| A5 | **Não sobrescreve rascunho existente.** A sugestão só preenche **vagas vazias** (required − assignments atuais). Rodar "sugerir" 2× não embaralha ajustes manuais do coordenador. | Idempotência de segurança. |
+| A6 | Contenda entre equipes: se duas equipes disputam o mesmo membro na mesma missa, vence a de **menor `priority`** do vínculo do membro; o "primeiro que aloca" do guloso respeita isso pela ordem de processamento por prioridade. | D5. |
+
+## O algoritmo (guloso, determinístico)
+
+Para o alvo (equipe(s), mês) — processar equipes por **prioridade** (para A6):
 
 ```
-POST /escala/schedule/suggest
-Body: { month: "YYYY-MM", teamIds?: string[] }
-→ { created: number, gaps: Gap[] }
+1. occurrences ← ocorrências materializadas do mês (S2), ordenadas por data/hora.
+2. Para cada equipe (ordenada por prioridade ascendente):
+     para cada occurrence:
+       required ← resolveStaffing(occurrence, regras da equipe)   // S3, por função
+       funções ← ordenar por nº de qualificados-disponíveis ASC   // J4
+       para cada função (na ordem escassa→abundante):
+         vagas ← required[função] − assignments_atuais(occurrence, função)   // A5
+         repetir vagas vezes:
+           elegíveis ← membros(equipe) que são:
+              qualificados na função (A2) ∧ ativos (A2)
+              ∧ resolveAvailability(occurrence)=AVAILABLE (A1)
+              ∧ não no teto do mês (A3)
+              ∧ não já alocados nesta occurrence (A4)
+           se elegíveis vazio: registrar LACUNA (occurrence, função, motivo) e seguir  // J3
+           senão:
+              escolhido ← min por (assignments_no_mês, depois lastServedAt)  // J1/J2
+              criar Assignment(occurrence, equipe, função, escolhido, publishedAt=null)
+              atualizar contadores em memória (assignments_no_mês, lastServedAt)
+3. retornar { criados, lacunas[] }
 ```
 
-- **Autorização** (`EscalaAuthGuard` + `EscalaAccessService`): admin da paróquia
-  vê qualquer equipe; coordenador **só as próprias** (403 em equipe alheia; 404
-  em equipe de outra paróquia). Sem `teamIds`, o conjunto padrão é: **admin →
-  todas as equipes ativas da paróquia**; **coordenador → as equipes que
-  coordena** (ativo).
-- **Mês não materializado** (nenhuma `MassOccurrence` no mês) → **400** com
-  mensagem clara. A materialização (S2) é passo separado e pré-requisito.
-- `parishId` **sempre do ator** (JWT), nunca do body.
+Notas de implementação:
+- **`assignments_no_mês`** e **`lastServedAt`** mantidos **em memória** durante a corrida
+  (não reconsultar o banco a cada vaga). `lastServedAt` inicial = data do último assignment
+  do membro **antes** do mês (consulta única no começo); atualizado a cada alocação.
+- Determinístico: mesmas entradas → mesmo resultado. Desempate final estável (ex.: por
+  `memberId`) para não variar entre execuções.
+- Complexidade O(vagas × membros) — trivial para os tamanhos reais (dezenas). Não otimizar
+  prematuramente; clareza > esperteza (o coordenador precisa entender por que fulano caiu ali).
 
-## 3. Regras de justiça (J1–J4)
+## Endpoint
 
-| # | Regra | Descrição |
-|---|-------|-----------|
-| **J1** | **Balanceamento da carga total** | Entre os elegíveis para uma vaga, escala primeiro quem tem **menos atribuições no mês inteiro**, somando **todas as equipes** — balanceia a carga *total* da pessoa, não só a de uma equipe. Ninguém "carrega o mês" sozinho. |
-| **J2** | **Rodízio — há mais tempo sem servir** | Desempate por `lastServedAt` (data do **último** assignment do membro): quem serviu **há mais tempo** entra primeiro. Inicial = último serviço **antes do mês** (consulta única); **atualizado em memória** a cada alocação da corrida. Quem nunca serviu entra na frente. **Não** usa `TeamMembership.priority` (isso é contenda entre equipes — D5, fora do desempate de justiça). |
-| **J3** | **Nunca relaxa regra sozinho** | O algoritmo **jamais** preenche uma vaga violando qualificação, disponibilidade, teto ou exclusividade só para "não deixar buraco". Prefere **deixar a lacuna** e reportá-la. Relaxar é decisão humana (S8). |
-| **J4** | **Determinismo** | Mesma entrada → mesma saída. Toda escolha e desempate usa ordenação **total e explícita** (atribuições no mês ↑, `lastServedAt` ↑, `memberId` ↑; ocorrências por data/hora/id; equipes por nome/id; funções por `sortOrder`/id). Nunca aleatório; nunca dependente da ordem do banco. |
+| Método | Rota | Notas |
+|--------|------|-------|
+| POST | `/escala/schedule/suggest` | Body `{ month: 'YYYY-MM', teamIds?: string[] }`. Sem `teamIds` = todas as equipes que o ator pode gerir. Cria assignments em rascunho e retorna `{ created, gaps: [{ occurrenceId, functionId, teamId, reason }] }`. |
 
-## 4. Decisões automáticas (A1–A6)
+- **Autorização** (`EscalaAuthGuard` + `EscalaAccessService`, da S5): coordenador só as
+  **próprias** equipes; admin qualquer. Se `teamIds` incluir equipe fora do alcance → 403.
+- Idempotente por A5: reexecutar só preenche o que está vazio.
+- Rejeitar mês não materializado (sem ocorrências) com mensagem clara ("abra o mês primeiro").
 
-| # | Decisão | Descrição |
-|---|---------|-----------|
-| **A1** | **"Não informou" ≠ disponível** | Só entra quem tem disponibilidade **efetiva `AVAILABLE`** (`explicit` ou `rule`). `default` (não respondeu) resolve como indisponível (opt-in — S6/U1/U2) e **nunca** é escalado. |
-| **A2** | **Só qualificado** | O membro precisa ter a **função** da vaga qualificada no vínculo (`MembershipFunction`) daquela equipe. |
-| **A3** | **Respeita o teto por equipe (D8)** | Conta as atribuições do membro **naquela equipe** no mês (rascunho + publicado, exceto `CANCELLED`). Ao atingir `maxAssignmentsPerMonth`, sai dos candidatos. `null` = sem teto. |
-| **A4** | **Uma pessoa por ocorrência (D4 / Regime A)** | `unique(occurrenceId, memberId)` vale sempre. O algoritmo nunca coloca o mesmo membro duas vezes na mesma ocorrência (mesmo em funções ou equipes distintas). Respeita atribuições já existentes. |
-| **A5** | **Não sobrescreve rascunho** | Preenche **só vagas vazias** = `requiredCount − atribuições existentes` (por ocorrência/função/equipe). Atribuições já criadas (rascunho ou publicado) são preservadas e **contam** como preenchimento. |
-| **A6** | **Só ativo** | Só `Member.isActive` **e** `TeamMembership.isActive`. Revogar o vínculo tira a pessoa da sugestão na hora. |
+## Relatório de lacunas (`gaps`)
 
-## 5. Algoritmo (guloso determinístico)
+Cada lacuna: `{ occurrenceId, date, time, teamId, functionId, functionName, required, filled, reason }`.
+`reason` ∈ { `SEM_DISPONIVEL`, `SEM_QUALIFICADO`, `TODOS_NO_TETO` } — o motivo pelo qual não
+houve elegível. É o que a S8 mostra ao coordenador para ele decidir (chamar alguém, relaxar
+teto na mão, aceitar a lacuna). **O algoritmo nunca decide por ele** (J3).
 
-Para cada **ocorrência** (ordenada por data/hora/id), para cada **equipe**
-autorizada (nome/id), para cada **função** com demanda (via `resolveStaffing`,
-ordenada por `sortOrder`/id):
+## Critérios de aceite
 
-1. `remaining = requiredCount − jáPreenchido(ocorrência, equipe, função)`. Se
-   `≤ 0`, pula (A5).
-2. Monta os candidatos em cascata:
-   - **qualificados** = vínculos ativos com a função (A2/A6). Vazio →
-     lacuna `SEM_QUALIFICADO`.
-   - **disponíveis** = qualificados com disponibilidade efetiva `AVAILABLE` (A1).
-     Vazio → lacuna `SEM_DISPONIVEL`.
-   - **elegíveis** = disponíveis que **não** estão nessa ocorrência (A4) e ainda
-     **não** atingiram o teto (A3).
-3. Ordena elegíveis por **J1 → J2 → J4** — `(atribuições_no_mês ↑, lastServedAt ↑,
-   memberId ↑)` — e escala `min(remaining, elegíveis)`. Cada atribuição atualiza
-   a ocupação da ocorrência (A4), a carga total no mês (J1) e a carga na equipe
-   (teto/A3), o preenchimento da vaga (A5) e o `lastServedAt` do membro (J2 —
-   passa a "ter servido" naquela data). O guloso "enxerga" o que acabou de
-   escalar; como as ocorrências correm em ordem de data, o `lastServedAt` só
-   avança.
-4. Se sobrou vaga (`missing > 0`), registra a lacuna com o **motivo**:
-   - `SEM_QUALIFICADO` — nenhum membro qualificado para a função na equipe.
-   - `SEM_DISPONIVEL` — havia qualificados, mas **nenhum/insuficientes**
-     disponíveis (todos os disponíveis foram escalados e ainda faltou).
-   - `TODOS_NO_TETO` — havia disponíveis, mas os que faltaram estão **no teto**
-     ou **já servindo** naquela ocorrência (capacidade esgotada).
+- [ ] Gera rascunho para (mês, equipe) criando `Assignment` com `publishedAt=null`.
+- [ ] **J1:** distribuição iguala a contagem; desempate por há-mais-tempo-sem-servir (teste com
+  equipe de 7 p/ ~30 vagas → todos com contagem próxima, sem um sobrecarregado).
+- [ ] **J3:** vaga sem elegível fica aberta e aparece em `gaps` com o motivo certo; **nada** é
+  forçado (teto não estourado, indisponível não escalado).
+- [ ] **J4:** função escassa preenchida antes da abundante (teste: poucos cerimoniários não são
+  "gastos" antes da vaga de cerimoniário).
+- [ ] **A1:** quem "não informou" nunca é escalado.
+- [ ] **A3/A4:** teto respeitado; ninguém em duas funções na mesma missa.
+- [ ] **A5:** rodar `suggest` 2× não altera assignments já existentes (só preenche vazio).
+- [ ] **A6:** contenda entre equipes resolve por `priority`; membro não acaba em duas equipes na mesma missa.
+- [ ] Determinístico (mesmas entradas → mesmo resultado).
+- [ ] Autorização: coordenador limitado às próprias equipes (403 fora).
+- [ ] Mês não materializado → erro claro.
+- [ ] Intenções sem regressão; **CI verde**.
 
-O algoritmo **não relaxa** nenhuma regra (J3): a lacuna é o resultado honesto.
+## Testes sugeridos
 
-### `Gap`
+- Unit do `SuggestionService` com fixtures desenhadas: equipe pequena (força repetição, J2),
+  função escassa (J4), todos no teto (J3/TODOS_NO_TETO), ninguém disponível (J3/SEM_DISPONIVEL),
+  contenda entre duas equipes (A6), reexecução idempotente (A5).
+- E2E do endpoint: feliz + gaps + autorização + mês não materializado.
 
-```ts
-{
-  occurrenceId, date, time,
-  teamId, teamName,
-  functionId, functionName,
-  required, filled, missing,
-  reason: "SEM_DISPONIVEL" | "SEM_QUALIFICADO" | "TODOS_NO_TETO"
-}
+## Relatório de Sessão (colar no PR)
+
 ```
-
-## 6. Arquitetura
-
-- **`suggest-schedule.ts`** — função **pura** `planSchedule(input)` (sem I/O):
-  recebe ocorrências, equipes, atribuições existentes e a disponibilidade, e
-  devolve `{ toCreate, gaps }`. Testável sem banco; reusa `resolveStaffing` e
-  `resolveAvailability`. É onde vivem J1–J4 e A1–A6.
-- **`suggestion.service.ts`** — I/O: autoriza equipes (`EscalaAccessService`),
-  rejeita mês não materializado, carrega os dados — incluindo o **histórico de
-  serviço anterior ao mês** (consulta única de assignments com `occurrence.date <
-  início do mês`, reduzida ao último por membro → `lastServedAt` inicial de J2) —,
-  chama o planner, persiste os rascunhos (`status=SCHEDULED`, `publishedAt=null`,
-  `assignedByUserId`/`assignedByMemberId` conforme o realm) e devolve
-  `{ created, gaps }`. O `priority` **não** é lido para a sugestão (não entra no
-  desempate de justiça).
-- **`schedule.controller.ts`** — `POST /escala/schedule/suggest`, sob
-  `EscalaAuthGuard`, valida o body com `scheduleSuggestSchema` (Zod, `shared`).
-
-## 7. Fora de escopo (respeitado)
-
-- UI de montagem, override manual, visão de conflitos e **publicação** → **S8**.
-- Lembrete/confirmação → S9.
-- Teto global por pessoa (R2), Regime B (R3) — permanecem fechados.
-
-## 8. Relatório de Sessão (colar no PR)
-
-> Preenchido ao final — ver Changelog do orquestrador (Seção 8).
+S7 — Motor de Sugestão de Escala
+- SuggestionService (guloso, determinístico); reusa resolveStaffing + resolveAvailability ✔
+- J1 contagem igual + desempate há-mais-tempo | J2 espaçamento-preferência | J3 lacuna aberta+reportada | J4 escassa→abundante ✔
+- A1 só disponível | A2 qualificado/ativo | A3 teto | A4 unique-por-missa | A5 não sobrescreve rascunho | A6 priority ✔
+- Endpoint POST /escala/schedule/suggest (rascunho publishedAt=null) + relatório de gaps com motivo ✔
+- Autorização coordenador/admin (S5) ✔ | mês não materializado rejeitado ✔
+- Determinístico; sem migração | Intenções sem regressão ✔ | CI: verde ✔
+- Observações / desvios: <...>
+```
