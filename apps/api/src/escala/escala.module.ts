@@ -16,6 +16,7 @@ import { SuggestionService } from "./suggestion.service";
 import { ScheduleService } from "./schedule.service";
 import { MemberPortalController } from "./member-portal.controller";
 import { AvailabilityService } from "./availability.service";
+import { MemberAssignmentService } from "./member-assignment.service";
 import { MemberAuthController } from "./auth/member-auth.controller";
 import { MemberAuthService } from "./auth/member-auth.service";
 import { MemberAuthTokenService } from "./auth/member-auth-token.service";
@@ -43,6 +44,11 @@ import { memberAuthConfig } from "./auth/member-auth.config";
  *   `ScheduleController.getGrid`/`publish` + `AssignmentController` sobre o
  *   `ScheduleService` e o puro `buildScheduleGrid` (grade + candidatos
  *   eligible/reason/conflict, override consciente V2, contenda V3, publicacao V4).
+ * - S9: confirmacao pelo portal (`MemberAssignmentService`, GET/PUT
+ *   `/escala/me/assignments` sob `MemberJwtGuard` — so o proprio/publicado). A
+ *   recusa (DECLINED) reabre a lacuna na S8 (`getGrid` ignora DECLINED) e avisa o
+ *   coordenador via `EscalaNotifyService`. O job de lembrete vive no worker
+ *   (cron isolado — D9), fora deste modulo.
  *
  * O `JwtModule` local assina/verifica o JWT de MEMBRO com secret proprio,
  * scopeado a este modulo — nunca colide com o `JwtService` do admin (D1).
@@ -75,6 +81,7 @@ import { memberAuthConfig } from "./auth/member-auth.config";
     SuggestionService,
     ScheduleService,
     AvailabilityService,
+    MemberAssignmentService,
     MemberAuthService,
     MemberAuthTokenService,
     MemberAuthDeliveryService,

@@ -99,6 +99,51 @@ export class EscalaNotifyService {
     );
   }
 
+  /**
+   * Aviso de RECUSA ao coordenador (S9/L4): um membro recusou uma escala
+   * publicada → a vaga reabre como lacuna na tela do coordenador (S8) e o grupo
+   * da equipe é avisado. **Nunca lança** (degradação graciosa) — o indicador na
+   * tela da S8 é o canal primário; a mensagem é o reforço. **Não** re-escala.
+   *
+   * Enviamos ao `whatsappGroupId` da equipe (onde o coordenador está). Sem grupo
+   * ou sem Z-API → apenas loga; a lacuna na tela já sinaliza a mudança.
+   */
+  async sendDeclineNotice(
+    parish: Parish,
+    team: { name: string; whatsappGroupId: string | null },
+    memberName: string,
+    occurrenceLabel: string,
+    functionName: string,
+  ): Promise<void> {
+    if (!this.zapiReady(parish) || !team.whatsappGroupId) {
+      this.logger.warn(
+        `Recusa nao notificada por WhatsApp (sem Z-API/grupo): team=${team.name} parish=${parish.id}`,
+      );
+      return;
+    }
+
+    const message =
+      `${memberName} recusou a escala de ${occurrenceLabel} (${functionName}) ` +
+      `na equipe ${team.name}. A vaga foi reaberta — verifique na montagem da escala.`;
+
+    try {
+      await this.whatsapp.sendText(
+        parish.zapiInstanceId as string,
+        parish.zapiToken as string,
+        team.whatsappGroupId,
+        message,
+        parish.zapiClientToken,
+      );
+      this.logger.log(`Aviso de recusa enviado ao grupo da equipe ${team.name}`);
+    } catch (err) {
+      this.logger.error(
+        `Falha ao avisar recusa (team=${team.name}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
   /** A paróquia tem credenciais Z-API mínimas para enviar? */
   zapiReady(parish: Parish): boolean {
     return Boolean(parish.zapiInstanceId && parish.zapiToken);

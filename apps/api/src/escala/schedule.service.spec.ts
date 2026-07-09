@@ -144,6 +144,57 @@ describe("ScheduleService", () => {
       expect(slot.filled).toBe(2);
       expect(slot.missing).toBe(0);
     });
+
+    it("recusa (DECLINED) reabre a vaga e sinaliza mudança pós-publicação (S9/L4)", async () => {
+      const F1 = "f1";
+      mockPrisma.team.findFirst.mockResolvedValue({
+        id: "t1",
+        name: "Coroinhas",
+        functions: [{ id: F1, name: "Cruz", sortOrder: 0 }],
+        staffing: [
+          {
+            functionId: F1,
+            requiredCount: 1,
+            scope: "DEFAULT",
+            weekday: null,
+            massScheduleId: null,
+            massExceptionId: null,
+            isActive: true,
+          },
+        ],
+        memberships: [
+          {
+            memberId: "m1",
+            maxAssignmentsPerMonth: null,
+            member: { fullName: "Ana Alves" },
+            qualifications: [{ functionId: F1 }],
+          },
+        ],
+      });
+      mockPrisma.massOccurrence.findMany.mockResolvedValue([
+        { id: "o1", date: OCC.date, time: "10:00", isSolemnity: false, sourceScheduleId: "s10", sourceExceptionId: null },
+      ]);
+      const seal = new Date(Date.UTC(2026, 6, 20));
+      mockPrisma.assignment.findMany.mockResolvedValue([
+        // publicada, porém RECUSADA pelo membro no portal (S9)
+        {
+          id: "a1", occurrenceId: "o1", teamId: "t1", functionId: F1, memberId: "m1",
+          status: "DECLINED", publishedAt: seal, republishedAt: seal, overrideReason: null,
+          team: { name: "Coroinhas" }, function: { name: "Cruz" }, member: { fullName: "Ana Alves" },
+        },
+      ]);
+      mockPrisma.availabilityEntry.findMany.mockResolvedValue([]);
+      mockPrisma.memberAvailabilityRule.findMany.mockResolvedValue([]);
+
+      const grid = await service.getGrid(ADMIN, { month: "2026-08", teamId: "t1" });
+      const slot = grid.occurrences[0].slots[0];
+      // A vaga voltou a contar como aberta (DECLINED não ocupa).
+      expect(slot.filled).toBe(0);
+      expect(slot.missing).toBe(1);
+      // O marcador da S8 é reusado para sinalizar a mudança ao coordenador.
+      expect(grid.publication.published).toBe(true);
+      expect(grid.publication.hasUnpublishedChanges).toBe(true);
+    });
   });
 
   // ── createAssignment ─────────────────────────────────

@@ -197,7 +197,7 @@ Legenda: ⬜ doc a escrever · 📝 especificado (doc pronto) · 🚧 em execuç
 | S6.5 | ✅ | #16 | 2026-07-06 | Convites e convocação. **Migração 14** `add_team_whatsapp_group` (só `ADD COLUMN whatsapp_group_id` em `teams` — sem `ALTER`/`DROP` em Intenções). **Convite individual** disparado no vínculo (`POST teams/:teamId/members`, `sendInvite` default true): 1 msg WhatsApp com o **link do portal** (`/p/{slug}/escala/entrar`, sem OTP) via `EscalaNotifyService`, reusando a entrega Z-API da S5; **degradação graciosa** (sem Z-API/telefone/falha → cadastro conclui, só loga). **Convocação** (`POST /admin/escala/convoke`, `ConvocationController`/`ConvocationService`) = passo **separado** da materialização: 1 msg por `whatsappGroupId` de equipe; autorização reusa `EscalaAccessService.assertCanManageTeam` (coordenador só a própria equipe → 403 em alheia; admin escolhe equipes); equipe sem grupo → **pulada** com aviso no resumo (C5); resumo `sent/skipped/failed`. UI: campo de grupo na tela de equipe, checkbox "Enviar convite" marcado no vínculo, painel "Convocar equipes". Sem envio individual em massa (R1). CI verde (api 119, web 8, worker 8). |
 | S7 | ✅ | #32 | 2026-07-07 | Motor de sugestão (backend). Planner **puro** `planSchedule` (`apps/api/src/escala/suggest-schedule.ts`) reusando `resolveStaffing` (S3) e `resolveAvailability` (S6) — guloso, **determinístico** (J4), **nunca relaxa regra** (J3). Regras J1 (balanceamento da carga **total** no mês, todas as equipes), J2 (rodízio: desempate por `lastServedAt` — quem serviu há mais tempo primeiro; `priority` **não** é desempate de justiça). Decisões A1 (não escala quem "não informou"), A2 (só qualificado), A3 (teto por equipe — D8), A4 (uma pessoa por ocorrência — D4/Regime A, global), A5 (não sobrescreve rascunho — preenche só vaga vazia), A6 (só ativo). Endpoint `POST /escala/schedule/suggest` (`ScheduleController`/`SuggestionService`, `EscalaAuthGuard`): cria `Assignment` rascunho (`publishedAt=null`, `SCHEDULED`) e devolve `{ created, gaps }` com motivo por lacuna (`SEM_DISPONIVEL`/`SEM_QUALIFICADO`/`TODOS_NO_TETO`). Autorização por `EscalaAccessService` (coordenador só as próprias equipes; admin qualquer). Mês não materializado → 400 claro. **Sem UI/publicação (é S8); sem schema/migração novos** (reusa tabelas da S1). Doc `ESCALA_07`. CI verde (api 155). |
 | S8 | ✅ | #36 (PR 1/2) · PR 2 (frontend) | 2026-07-07 | **PR 1 de 2 (backend) — #36:** endpoints de apoio da tela do coordenador: `GET /escala/schedule` (grade por missa: ocorrências + assignments rascunho/publicados + gaps recalculados + candidatos por vaga com `eligible`/`reason`/`conflict` via função pura `buildScheduleGrid`, reusando `resolveStaffing`/`resolveAvailability`), `POST /escala/assignments` (override consciente V2 → 422 sem `overrideReason`; unique(occurrence,member) → 409 V3; cria rascunho mesmo sobre publicado V4), `DELETE /escala/assignments/:id`, `POST /escala/schedule/publish` (carimba `publishedAt`+`republishedAt`; publicado editável; mudança pós-publicação detectável V4). **Migração 15** `add_assignment_override_and_republish` (aditiva: `override_reason`+`republished_at`, só `ADD COLUMN` em `assignments`). Autorização coordenador/admin (`EscalaAccessService`). **PR 2 (frontend/UI):** tela `/admin/escala/montagem` reusando o design do painel admin — grade do mês por missa (V1) com vagas por função, nomes preenchidos e lacunas destacadas com motivo; "Sugerir distribuição" (S7, só preenche vazio — A5); resolução de vaga (V2) com lista priorizada (elegíveis, depois excluídos rotulados) + modal de override consciente com `overrideReason`; contenda (V3) com candidato em outra equipe desabilitado/rotulado; publicar por equipe/mês (V4, segue editável); painel por pessoa (contagem + datas) para conferência da justiça. Sem tocar endpoints (são do PR 1). **CI verde** (web 14). |
-| S9 | ⬜ | — | — | — |
+| S9 | ✅ | #38 | 2026-07-09 | Lembretes + confirmação. **Migração 16** `add_escala_reminders`: `CREATE TYPE ReminderKind` + `CREATE TABLE reminder_logs` (chave única `(kind, target_key)` = idempotência) + `ADD COLUMN` de config de antecedência em `parish_settings` (`reminders_enabled` default **false** = gate de R1, `reminder_eve_hour`, `reminder_same_day_hours_before?`, `reminder_group_summary_days_before`) — só aditivo, sem `ALTER`/`DROP` em Intenções. **Worker:** job **isolado** `check-reminders` (cron 1min, separado do `check-dispatches` — D9); pura `planReminders` (véspera + opcional no dia, só escalados + resumo no grupo 1 msg/equipe/dia) + `ReminderService` (claim-then-send: cria `ReminderLog` **antes** de enviar → reprocessar o tick **não reenvia**; degradação graciosa). Envio atrás de **`MessageProvider`** (`ZapiMessageProvider` hoje → Cloud API sem reescrever a lógica — L6/R1). **Confirmação pelo PORTAL** (L3, sem webhook inbound): `GET /escala/me/assignments` + `PUT /escala/me/assignments/:id {status}` (realm de membro, só o próprio, só publicado; alheio→403, outra paróquia→404, rascunho→400). **Recusa** (L4) marca `DECLINED`, **reabre a vaga como lacuna na S8** (grid ignora DECLINED; reusa o marcador `hasUnpublishedChanges`) e **notifica o coordenador** no grupo da equipe — **sem re-escalar** (D11/J3). Sem re-escala automática, sem webhook inbound (fora do escopo). CI verde (api 185, worker 30, web 14). |
 | S10 | ⬜ | — | — | — |
 
 ---
@@ -218,6 +218,68 @@ Uma sessão só está `✅` quando **tudo** abaixo é verdade:
 ## 8. Changelog / diário de bordo
 
 > Cada sessão concluída adiciona uma entrada aqui (mais recente no topo).
+
+- **2026-07-09 — S9 (Lembretes e Confirmação)** · PR #38
+  - **Dados — migração 16** `add_escala_reminders` (puramente aditiva):
+    - `CREATE TYPE "ReminderKind"` (`GROUP_SUMMARY`/`INDIVIDUAL_EVE`/`INDIVIDUAL_DAY`);
+    - `CREATE TABLE "reminder_logs"` — dedupe do cron, com **`@@unique([kind,
+      target_key])`** como garantia de idempotência. **Grão do alvo** (justificado):
+      individual → `assignmentId` (1 por escalação e por tipo); grupo →
+      `teamId:YYYY-MM-DD` (1 por equipe e por dia). `assignmentId`/`teamId` soltos
+      (sem FK) para desacoplar do ciclo de vida do assignment; só `parishId` é FK;
+    - `ADD COLUMN` de config por paróquia em `parish_settings` (L2):
+      `reminders_enabled` (**default false** — gate consciente do R1),
+      `reminder_eve_hour` (18), `reminder_same_day_hours_before?` (null = off),
+      `reminder_group_summary_days_before` (3). **Só `ADD COLUMN`** — nenhum
+      `ALTER`/`DROP` em tabela de Intenções (D9 / Seção 1.1). `migrate deploy`
+      limpo em base zerada (16 migrações) + `migrate diff` **sem drift**.
+  - **Worker — job isolado (D9/L5):** novo cron `check-reminders` (1min),
+    **separado** do `check-dispatches`; uma falha aqui **não** encosta no despacho
+    das Intenções. A cada tick: acha os assignments **publicados** de missas na
+    janela, decide o que enviar (`planReminders`, **pura**) e envia.
+  - **`planReminders` (pura, testável sem I/O)** — véspera (`INDIVIDUAL_EVE`, a
+    partir da hora configurada) + opcional no dia (`INDIVIDUAL_DAY`, N horas antes)
+    **só para escalados**; **resumo no grupo** (`GROUP_SUMMARY`, N dias antes, **1
+    msg por equipe/dia** — várias missas da equipe no mesmo dia colapsam). Nunca
+    lembra missa no passado; propaga destino nulo (sem telefone/grupo) para o
+    service pular.
+  - **`ReminderService` (I/O) — idempotência claim-then-send:** cria o
+    `ReminderLog` **antes** de enviar; colisão `P2002` na chave única → **não
+    reenvia** (reprocessar o mesmo tick é no-op). **Degradação graciosa:** falha de
+    envio rebaixa o log (`success=false`) e **segue** — nunca trava o tick nem
+    derruba outras missas/paróquias. Só paróquias com `remindersEnabled` e Z-API.
+  - **Interface de provedor (L6/R1):** o envio depende só de **`MessageProvider`**
+    (`sendText(target, message)`); `ZapiMessageProvider` é a implementação atual
+    (reusa o `WhatsappService` do worker). Trocar Z-API → **WhatsApp Cloud API
+    oficial** é injetar outro provedor no `main.ts` — **sem reescrever** a lógica de
+    lembrete. É a mitigação estrutural do R1 (individual em massa é o 1º candidato
+    à API oficial).
+  - **Confirmação pelo PORTAL (L3 — sem webhook inbound da Z-API):** endpoints do
+    realm de membro sob `MemberJwtGuard` — `GET /escala/me/assignments?from=&to=`
+    (minhas escalas **publicadas**; default hoje..+60d) e
+    `PUT /escala/me/assignments/:id {status: CONFIRMED|DECLINED}`. `memberId`/
+    `parishId` **sempre do JWT**: só o **próprio** assignment (alheio → **403**),
+    só **publicado** (rascunho → **400**), outra paróquia → **404** (não vaza).
+  - **Recusa → coordenador (L4):** `DECLINED` mantém a linha (histórico), marca
+    `declinedAt`, e **reabre a vaga como lacuna na S8** — `buildScheduleGrid`
+    (via `getGrid`) passa a **ignorar DECLINED**, então `filled` cai, `missing`
+    sobe e a lacuna reaparece; **reusa o marcador** `hasUnpublishedChanges` (uma
+    recusa de escala publicada acende o aviso, como um rascunho novo). **Notifica o
+    coordenador** no grupo da equipe (`EscalaNotifyService.sendDeclineNotice`,
+    degradação graciosa). **Não** re-escala (D11/J3) — o coordenador resolve.
+  - **Zod em `packages/shared`:** `memberAssignmentsQuerySchema` (from/to YYYY-MM-DD,
+    `from<=to`) e `memberAssignmentStatusSchema` (`CONFIRMED`/`DECLINED`); enum
+    `ReminderKind` espelhado em `types.ts`.
+  - **Fora de escopo (respeitado):** webhook inbound da Z-API (responder no
+    WhatsApp) e **re-escala automática** — ambos fase futura; troca membro↔membro
+    (S10).
+  - **Verificação:** `pnpm -r typecheck`/`lint` (0 erros; só warnings pré-existentes)
+    /`test` **verdes** — **api 185** (9 novos: confirmação/recusa, alheio→403,
+    rascunho→400, notificação + degradação graciosa; grid reabre lacuna na recusa),
+    **worker 30** (14 novos: `planReminders` — janelas/grão/passado; `ReminderService`
+    — idempotência 2 ticks→1 envio, claim-then-send, degradação graciosa, gate R1),
+    web 14; `prisma validate` OK; `migrate deploy` limpo + `migrate diff` sem drift.
+    Intenções sem regressão (worker/dispatch de Intenções intocados — D9).
 
 - **2026-07-07 — S8 · PR 2 de 2 (Tela do coordenador — frontend/UI)**
   - **Tela `/admin/escala/montagem`** (`apps/web`, Next.js App Router) **reusando o
