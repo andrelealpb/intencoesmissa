@@ -325,3 +325,85 @@ export function buildPersonPanel(occurrences: GridOccurrence[]): PersonStat[] {
     (a, b) => b.count - a.count || a.memberName.localeCompare(b.memberName),
   );
 }
+
+// ── Gestão de ocorrências do mês aberto (S2.1) ────────────────────────────────
+
+// Ocorrência do mês com indicadores (GET /escala/occurrences?month=).
+export interface ManagedOccurrence {
+  id: string;
+  date: string; // YYYY-MM-DD
+  time: string;
+  title?: string | null;
+  isSolemnity: boolean;
+  sourceScheduleId?: string | null;
+  sourceExceptionId?: string | null;
+  hasAssignments: boolean;
+  assignmentCount: number;
+  hasAvailability: boolean;
+  availabilityCount: number;
+  inCadastro: boolean; // false = órfã/fantasma (horário não existe mais no cadastro)
+}
+
+// O que a exclusão vai afetar (a exclusão cascateia — escala + disponibilidade).
+export interface OccurrenceAffected {
+  assignmentCount: number;
+  publishedAssignmentCount: number;
+  availabilityCount: number;
+}
+
+// Resposta do DELETE /escala/occurrences/:id — ou apaga, ou pede confirmação.
+export interface OccurrenceDeleteResult {
+  deleted: boolean;
+  requiresConfirmation: boolean;
+  occurrence: {
+    id: string;
+    date: string;
+    time: string;
+    title?: string | null;
+    isSolemnity: boolean;
+  };
+  affected: OccurrenceAffected;
+}
+
+// Conflito de reconciliação: órfã com escala/disponibilidade — decisão manual.
+export interface ReconcileConflict {
+  occurrenceId: string;
+  date: string;
+  time: string;
+  title?: string | null;
+  isSolemnity: boolean;
+  hasAssignments: boolean;
+  hasAvailability: boolean;
+  assignmentCount: number;
+  availabilityCount: number;
+}
+
+// Resumo do POST /escala/occurrences/reconcile.
+export interface ReconcileResult {
+  month: string;
+  added: number;
+  updated: number;
+  removedClean: number;
+  conflicts: ReconcileConflict[];
+}
+
+// Dia da semana (0..6) a partir de uma data civil YYYY-MM-DD (base UTC).
+export function weekdayOf(date: string): number {
+  return new Date(date + 'T00:00:00.000Z').getUTCDay();
+}
+
+// Frase do que será perdido ao excluir — "3 escalados e 5 respostas de disponibilidade".
+export function affectedLabel(affected: OccurrenceAffected): string {
+  const parts: string[] = [];
+  if (affected.assignmentCount > 0) {
+    const pub = affected.publishedAssignmentCount;
+    parts.push(
+      `${affected.assignmentCount} escalado(s)` +
+        (pub > 0 ? ` (${pub} já publicado(s))` : ''),
+    );
+  }
+  if (affected.availabilityCount > 0) {
+    parts.push(`${affected.availabilityCount} resposta(s) de disponibilidade`);
+  }
+  return parts.join(' e ');
+}

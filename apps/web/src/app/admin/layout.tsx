@@ -21,6 +21,7 @@ const navItems = [
 const escalaNavItems = [
   { href: '/admin/escala/equipes', label: 'Equipes' },
   { href: '/admin/escala/membros', label: 'Membros' },
+  { href: '/admin/escala/ocorrencias', label: 'Ocorrências do mês' },
   { href: '/admin/escala/montagem', label: 'Montagem' },
 ];
 
