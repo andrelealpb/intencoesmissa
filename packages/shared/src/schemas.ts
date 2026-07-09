@@ -413,6 +413,12 @@ export const schedulePublishSchema = z.object({
   teamId: uuidSchema,
 });
 
+// ── Gestão de ocorrências do mês aberto (S2.1) ──────────
+// POST /escala/occurrences/reconcile — recalcula o conjunto esperado do cadastro
+// atual, adiciona faltantes, remove órfã VAZIA direto, e órfã com escala/
+// disponibilidade vira conflito p/ decisão manual (nunca some sozinha).
+export const reconcileMonthSchema = z.object({ month: monthSchema });
+
 // ── Confirmação pelo portal (S9/L3) ─────────────────────
 // GET /escala/me/assignments?from=&to= — minhas escalas PUBLICADAS no intervalo.
 // `from`/`to` (YYYY-MM-DD) opcionais; o backend aplica um intervalo padrão.
@@ -488,6 +494,7 @@ export type ParishProfileInput = z.infer<typeof parishProfileSchema>;
 export type NoticeInput = z.infer<typeof noticeSchema>;
 export type MaterializeRangeInput = z.infer<typeof materializeRangeSchema>;
 export type UpdateOccurrenceInput = z.infer<typeof updateOccurrenceSchema>;
+export type ReconcileMonthInput = z.infer<typeof reconcileMonthSchema>;
 
 // Escala — Cadastro (S3)
 export type TeamInput = z.infer<typeof teamSchema>;

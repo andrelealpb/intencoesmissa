@@ -101,6 +101,41 @@ describe("EscalaAccessService", () => {
     });
   });
 
+  describe("assertCanManageOccurrences (nivel paroquia — admin ∪ coordenador)", () => {
+    it("admin PARISH_ADMIN passa sem consultar o banco", async () => {
+      await expect(access.assertCanManageOccurrences(ADMIN)).resolves.toBe("p1");
+      expect(mockPrisma.teamMembership.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("coordenador ativo de alguma equipe da paroquia passa (lido do banco)", async () => {
+      mockPrisma.teamMembership.findFirst.mockResolvedValue({ id: "tm1" });
+      await expect(access.assertCanManageOccurrences(COORD)).resolves.toBe("p1");
+      expect(mockPrisma.teamMembership.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            parishId: "p1",
+            memberId: "m1",
+            isCoordinator: true,
+            isActive: true,
+          }),
+        }),
+      );
+    });
+
+    it("membro que nao coordena nenhuma equipe → 403", async () => {
+      mockPrisma.teamMembership.findFirst.mockResolvedValue(null);
+      await expect(access.assertCanManageOccurrences(COORD)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it("admin sem role PARISH_ADMIN → 403", async () => {
+      await expect(
+        access.assertCanManageOccurrences({ ...ADMIN, role: "OTHER" }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
   describe("isAdmin", () => {
     it("true so para admin PARISH_ADMIN", () => {
       expect(access.isAdmin(ADMIN)).toBe(true);

@@ -11,10 +11,19 @@ class FakeOccurrenceStore {
   reset() {
     this.rows = [];
     this.seq = 1;
+    this.counts = {};
   }
 
   private dayKey(date: Date) {
     return new Date(date).toISOString().slice(0, 10);
+  }
+
+  // Contadores de dado humano por ocorrencia (populados pelos testes de S2.1).
+  counts: Record<string, { assignments: number; availability: number }> = {};
+
+  private withCount(r: any) {
+    const c = this.counts[r.id] ?? { assignments: 0, availability: 0 };
+    return { ...r, _count: { assignments: c.assignments, availability: c.availability } };
   }
 
   create = jest.fn(async ({ data }: any) => {
@@ -22,6 +31,8 @@ class FakeOccurrenceStore {
       id: `occ-${this.seq++}`,
       isSolemnity: false,
       title: null,
+      sourceScheduleId: null,
+      sourceExceptionId: null,
       ...data,
       date: new Date(data.date),
     };
@@ -35,20 +46,28 @@ class FakeOccurrenceStore {
     return row;
   });
 
-  findMany = jest.fn(async ({ where }: any) => {
-    return this.rows
+  delete = jest.fn(async ({ where }: any) => {
+    const idx = this.rows.findIndex((r) => r.id === where.id);
+    const [removed] = this.rows.splice(idx, 1);
+    return removed;
+  });
+
+  findMany = jest.fn(async ({ where, select }: any) => {
+    const rows = this.rows
       .filter((r) => {
         if (where.parishId && r.parishId !== where.parishId) return false;
         if (where.date?.gte && r.date < where.date.gte) return false;
         if (where.date?.lte && r.date > where.date.lte) return false;
         return true;
       })
-      .map((r) => ({ ...r }));
+      .map((r) => (select?._count ? this.withCount(r) : { ...r }));
+    return rows;
   });
 
-  findUnique = jest.fn(async ({ where }: any) => {
+  findUnique = jest.fn(async ({ where, select }: any) => {
     const row = this.rows.find((r) => r.id === where.id);
-    return row ? { ...row } : null;
+    if (!row) return null;
+    return select?._count ? this.withCount(row) : { ...row };
   });
 }
 
@@ -60,6 +79,8 @@ describe("OccurrenceService", () => {
     massSchedule: { findMany: jest.fn() },
     massException: { findMany: jest.fn() },
     massOccurrence: store,
+    // count de publicados no delete (so chamado quando ha assignments).
+    assignment: { count: jest.fn(async () => 0) },
     // $transaction recebe um callback e passa o proprio prisma (tx) — reusa o store.
     $transaction: jest.fn(async (cb: any) => cb(mockPrisma)),
   };
@@ -182,6 +203,273 @@ describe("OccurrenceService", () => {
       await expect(
         service.update(PARISH, "occ-y", { isSolemnity: true }),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  // ── S2.1 — gestao do mes aberto ────────────────────────
+
+  describe("reconcile", () => {
+    it("adiciona missa nova do cadastro atual", async () => {
+      // Domingo 08:00 no cadastro; julho/2026 tem 4 domingos (5,12,19,26).
+      mockPrisma.massSchedule.findMany.mockResolvedValue([
+        { id: "sch-sun", parishId: PARISH, weekday: 0, time: "08:00", isActive: true },
+      ]);
+      mockPrisma.massException.findMany.mockResolvedValue([]);
+
+      const res = await service.reconcile(PARISH, "2026-07");
+
+      expect(res.added).toBe(4);
+      expect(res.removedClean).toBe(0);
+      expect(res.conflicts).toHaveLength(0);
+      expect(store.rows).toHaveLength(4);
+    });
+
+    it("remove orfa VAZIA direto (o horario nao existe mais no cadastro)", async () => {
+      // Ocorrencia fantasma: quarta 19h ja materializada, sem escala/disponibilidade.
+      store.rows.push({
+        id: "occ-ghost",
+        parishId: PARISH,
+        date: new Date("2026-07-08T00:00:00.000Z"), // quarta
+        time: "19:00",
+        title: null,
+        isSolemnity: false,
+        sourceScheduleId: "sch-old",
+        sourceExceptionId: null,
+      });
+      // Cadastro atual NAO tem mais a quarta 19h (foi corrigido).
+      mockPrisma.massSchedule.findMany.mockResolvedValue([]);
+      mockPrisma.massException.findMany.mockResolvedValue([]);
+
+      const res = await service.reconcile(PARISH, "2026-07");
+
+      expect(res.removedClean).toBe(1);
+      expect(res.conflicts).toHaveLength(0);
+      expect(store.rows).toHaveLength(0); // fantasma some
+    });
+
+    it("orfa COM escala vira CONFLITO (nao some sozinha)", async () => {
+      store.rows.push({
+        id: "occ-ghost",
+        parishId: PARISH,
+        date: new Date("2026-07-08T00:00:00.000Z"),
+        time: "19:00",
+        title: null,
+        isSolemnity: false,
+        sourceScheduleId: "sch-old",
+        sourceExceptionId: null,
+      });
+      store.counts["occ-ghost"] = { assignments: 2, availability: 0 };
+      mockPrisma.massSchedule.findMany.mockResolvedValue([]);
+      mockPrisma.massException.findMany.mockResolvedValue([]);
+
+      const res = await service.reconcile(PARISH, "2026-07");
+
+      expect(res.removedClean).toBe(0);
+      expect(res.conflicts).toHaveLength(1);
+      expect(res.conflicts[0]).toMatchObject({
+        occurrenceId: "occ-ghost",
+        time: "19:00",
+        hasAssignments: true,
+        hasAvailability: false,
+        assignmentCount: 2,
+      });
+      expect(store.rows).toHaveLength(1); // preservada
+    });
+
+    it("orfa COM disponibilidade vira CONFLITO (nao some sozinha)", async () => {
+      store.rows.push({
+        id: "occ-ghost",
+        parishId: PARISH,
+        date: new Date("2026-07-08T00:00:00.000Z"),
+        time: "19:00",
+        title: null,
+        isSolemnity: false,
+        sourceScheduleId: "sch-old",
+        sourceExceptionId: null,
+      });
+      store.counts["occ-ghost"] = { assignments: 0, availability: 5 };
+      mockPrisma.massSchedule.findMany.mockResolvedValue([]);
+      mockPrisma.massException.findMany.mockResolvedValue([]);
+
+      const res = await service.reconcile(PARISH, "2026-07");
+
+      expect(res.conflicts).toHaveLength(1);
+      expect(res.conflicts[0]).toMatchObject({
+        hasAssignments: false,
+        hasAvailability: true,
+        availabilityCount: 5,
+      });
+      expect(store.rows).toHaveLength(1);
+    });
+
+    it("preserva solenidade/titulo da ocorrencia que continua valida", async () => {
+      // Domingo 08:00 valido, ja elevado a solenidade e renomeado a mao.
+      store.rows.push({
+        id: "occ-sun",
+        parishId: PARISH,
+        date: new Date("2026-07-05T00:00:00.000Z"),
+        time: "08:00",
+        title: "Titulo manual",
+        isSolemnity: true,
+        sourceScheduleId: "sch-sun",
+        sourceExceptionId: null,
+      });
+      store.counts["occ-sun"] = { assignments: 3, availability: 2 };
+      mockPrisma.massSchedule.findMany.mockResolvedValue([
+        { id: "sch-sun", parishId: PARISH, weekday: 0, time: "08:00", isActive: true },
+      ]);
+      mockPrisma.massException.findMany.mockResolvedValue([]);
+
+      const res = await service.reconcile(PARISH, "2026-07");
+
+      const preserved = store.rows.find((r) => r.id === "occ-sun");
+      expect(preserved.isSolemnity).toBe(true); // NAO rebaixada
+      expect(preserved.title).toBe("Titulo manual"); // NAO sobrescrito
+      expect(res.conflicts).toHaveLength(0); // valida, nao e orfa
+    });
+
+    it("cenario do piloto: corrige cadastro → quarta-19h vazia some, com escala vira conflito", async () => {
+      // Duas fantasmas: uma vazia (some), outra com escala (conflito).
+      store.rows.push({
+        id: "occ-empty",
+        parishId: PARISH,
+        date: new Date("2026-07-08T00:00:00.000Z"),
+        time: "19:00",
+        title: null,
+        isSolemnity: false,
+        sourceScheduleId: "sch-old",
+        sourceExceptionId: null,
+      });
+      store.rows.push({
+        id: "occ-withdata",
+        parishId: PARISH,
+        date: new Date("2026-07-15T00:00:00.000Z"),
+        time: "19:00",
+        title: null,
+        isSolemnity: false,
+        sourceScheduleId: "sch-old",
+        sourceExceptionId: null,
+      });
+      store.counts["occ-withdata"] = { assignments: 1, availability: 0 };
+      mockPrisma.massSchedule.findMany.mockResolvedValue([]);
+      mockPrisma.massException.findMany.mockResolvedValue([]);
+
+      const res = await service.reconcile(PARISH, "2026-07");
+
+      expect(res.removedClean).toBe(1);
+      expect(res.conflicts).toHaveLength(1);
+      expect(res.conflicts[0].occurrenceId).toBe("occ-withdata");
+      expect(store.rows.map((r) => r.id)).toEqual(["occ-withdata"]);
+    });
+  });
+
+  describe("deleteOccurrence", () => {
+    const seedOcc = (id: string, parishId = PARISH) => {
+      store.rows.push({
+        id,
+        parishId,
+        date: new Date("2026-07-08T00:00:00.000Z"),
+        time: "19:00",
+        title: null,
+        isSolemnity: false,
+      });
+    };
+
+    it("remove direto quando nao tem escala nem disponibilidade", async () => {
+      seedOcc("occ-1");
+
+      const res = await service.deleteOccurrence(PARISH, "occ-1", false);
+
+      expect(res.deleted).toBe(true);
+      expect(store.rows).toHaveLength(0);
+    });
+
+    it("com dados e SEM force: nao apaga; devolve o que sera afetado", async () => {
+      seedOcc("occ-2");
+      store.counts["occ-2"] = { assignments: 3, availability: 5 };
+
+      const res = await service.deleteOccurrence(PARISH, "occ-2", false);
+
+      expect(res.deleted).toBe(false);
+      expect(res.requiresConfirmation).toBe(true);
+      expect(res.affected).toMatchObject({ assignmentCount: 3, availabilityCount: 5 });
+      expect(store.rows).toHaveLength(1); // ainda la
+      expect(store.delete).not.toHaveBeenCalled();
+    });
+
+    it("com dados e force=true: apaga (cascateia)", async () => {
+      seedOcc("occ-3");
+      store.counts["occ-3"] = { assignments: 3, availability: 5 };
+
+      const res = await service.deleteOccurrence(PARISH, "occ-3", true);
+
+      expect(res.deleted).toBe(true);
+      expect(store.rows).toHaveLength(0);
+    });
+
+    it("404 quando a ocorrencia e de outra paroquia (nao vaza)", async () => {
+      seedOcc("occ-4", "outra");
+
+      await expect(
+        service.deleteOccurrence(PARISH, "occ-4", true),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(store.rows).toHaveLength(1);
+    });
+
+    it("404 quando a ocorrencia nao existe", async () => {
+      await expect(
+        service.deleteOccurrence(PARISH, "nope", false),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("listForManagement", () => {
+    it("marca indicadores e inCadastro=false para a orfa", async () => {
+      // Uma valida (domingo 08:00) e uma orfa (quarta 19:00 fora do cadastro).
+      store.rows.push({
+        id: "occ-sun",
+        parishId: PARISH,
+        date: new Date("2026-07-05T00:00:00.000Z"),
+        time: "08:00",
+        title: null,
+        isSolemnity: true,
+        sourceScheduleId: "sch-sun",
+        sourceExceptionId: null,
+      });
+      store.rows.push({
+        id: "occ-ghost",
+        parishId: PARISH,
+        date: new Date("2026-07-08T00:00:00.000Z"),
+        time: "19:00",
+        title: null,
+        isSolemnity: false,
+        sourceScheduleId: "sch-old",
+        sourceExceptionId: null,
+      });
+      store.counts["occ-sun"] = { assignments: 2, availability: 3 };
+      store.counts["occ-ghost"] = { assignments: 0, availability: 0 };
+      mockPrisma.massSchedule.findMany.mockResolvedValue([
+        { id: "sch-sun", parishId: PARISH, weekday: 0, time: "08:00", isActive: true },
+      ]);
+      mockPrisma.massException.findMany.mockResolvedValue([]);
+
+      const list = await service.listForManagement(PARISH, "2026-07");
+
+      const sun = list.find((o) => o.id === "occ-sun")!;
+      expect(sun).toMatchObject({
+        isSolemnity: true,
+        hasAssignments: true,
+        assignmentCount: 2,
+        hasAvailability: true,
+        availabilityCount: 3,
+        inCadastro: true,
+      });
+      const ghost = list.find((o) => o.id === "occ-ghost")!;
+      expect(ghost).toMatchObject({
+        hasAssignments: false,
+        hasAvailability: false,
+        inCadastro: false, // horario nao existe mais no cadastro
+      });
     });
   });
 });

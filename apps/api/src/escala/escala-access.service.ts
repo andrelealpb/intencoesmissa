@@ -94,6 +94,42 @@ export class EscalaAccessService {
     return actor.parishId;
   }
 
+  /**
+   * Autoriza operações sobre as OCORRÊNCIAS do mês (S2.1) — nível **paróquia**,
+   * não ligadas a uma equipe: a ocorrência é compartilhada entre as equipes e a
+   * exclusão/reconciliação cascateia por todas. Passa **admin** (dono da
+   * paróquia) **ou** qualquer **coordenador ativo** da paróquia (D2 — quem
+   * gerencia o mês aberto). Autoridade lida do banco a cada request. Retorna o
+   * `parishId` efetivo.
+   */
+  async assertCanManageOccurrences(actor: EscalaActor): Promise<string> {
+    if (!actor.parishId) {
+      throw new ForbiddenException("Acesso negado ao modulo Escala");
+    }
+
+    if (actor.kind === "admin") {
+      if (actor.role !== "PARISH_ADMIN") {
+        throw new ForbiddenException("Acesso negado ao modulo Escala");
+      }
+      return actor.parishId;
+    }
+
+    // Coordenador de QUALQUER equipe da paróquia (vínculo verificado no banco).
+    const coordinator = await this.prisma.teamMembership.findFirst({
+      where: {
+        parishId: actor.parishId,
+        memberId: actor.memberId,
+        isCoordinator: true,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    if (!coordinator) {
+      throw new ForbiddenException("Acesso negado ao modulo Escala");
+    }
+    return actor.parishId;
+  }
+
   /** Verdadeiro só para o realm admin — usado por operações sensíveis de nível
    * equipe que ainda são exclusivas do admin (ex.: nomear coordenador). */
   isAdmin(actor: EscalaActor): boolean {
